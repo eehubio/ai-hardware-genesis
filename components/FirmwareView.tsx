@@ -230,24 +230,17 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div 
                         onClick={() => msg.role === 'assistant' && setZoomedMessage(msg.text)}
-                        className={`max-w-[90%] p-4 rounded-[28px] text-[11px] leading-relaxed shadow-lg transition-all relative group/msg ${msg.role === 'assistant' ? 'cursor-zoom-in hover:ring-2 hover:ring-white/20' : ''} ${msg.role === 'user' ? 'bg-white/10 border border-white/10 rounded-tr-none text-white' : 'bg-white text-indigo-900 rounded-tl-none'}`}
+                        className={`max-w-[88%] px-3 py-2.5 rounded-eng-lg text-body leading-relaxed break-words transition-all relative group/msg ${msg.role === 'assistant' ? 'cursor-zoom-in hover:ring-2 hover:ring-white/20' : ''} ${msg.role === 'user' ? 'bg-white/10 border border-white/10 text-white' : 'bg-white text-indigo-900'}`}
                       >
-                        {msg.role === 'assistant' && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
-                             <div className="p-1.5 bg-slate-100 rounded-lg text-indigo-600 shadow-sm">
-                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                             </div>
-                          </div>
-                        )}
-                        <div className="markdown-body pointer-events-none">
+                        <div className="markdown-body pointer-events-none break-words [&_p]:m-0 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0.5">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {msg.text}
                           </ReactMarkdown>
                         </div>
                         {msg.role === 'assistant' && msg.text.includes('```') && (
-                          <div className="mt-4 pt-3 border-t border-indigo-100 flex items-center gap-2">
-                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400">已应用到编辑器</span>
+                          <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center gap-1.5">
+                             <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                             <span className="text-meta text-indigo-400">已应用到编辑器</span>
                           </div>
                         )}
                       </div>
@@ -268,17 +261,17 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                   <div ref={chatEndRef} />
                 </div>
 
-                <form onSubmit={handleChatSubmit} className="p-4 bg-indigo-800/30 border-t border-white/10 shrink-0 backdrop-blur-md">
-                  <div className="relative group">
+                <form onSubmit={handleChatSubmit} className="p-3 bg-indigo-800/30 border-t border-white/10 shrink-0">
+                  <div className="relative">
                     <input 
                       type="text" 
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="告诉助手你的定制要求..."
-                      className="w-full bg-indigo-950/40 border border-white/10 rounded-2xl py-4 pl-5 pr-14 text-xs font-bold text-white placeholder:text-indigo-300/50 outline-none focus:ring-4 focus:ring-white/5 transition-all"
+                      placeholder="让 AI 改代码…"
+                      className="w-full bg-indigo-950/40 border border-white/10 rounded-eng-lg py-2.5 pl-3 pr-11 text-body text-white placeholder:text-indigo-300/50 outline-none focus:ring-2 focus:ring-white/10 transition-all"
                     />
-                    <button type="submit" className="absolute right-1.5 top-1.5 w-10 h-10 bg-white text-indigo-600 rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    <button type="submit" className="absolute right-1.5 top-1.5 w-8 h-8 bg-white text-indigo-600 rounded-eng flex items-center justify-center hover:bg-indigo-50 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                     </button>
                   </div>
                 </form>

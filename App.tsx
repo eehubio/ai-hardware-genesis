@@ -284,7 +284,7 @@ const App: React.FC = () => {
               className="absolute top-4 left-4 z-30 px-3 py-2 bg-white border border-ink-200 rounded-eng-lg shadow-md text-body font-semibold text-ink-600 hover:text-ink-900 hover:shadow-lg transition-all flex items-center gap-1.5"
               title="展开模块库"
             >
-              库 <span>▶</span>
+              <span>▶</span> 模块库
             </button>
           )}
           {/* 右栏收起时显示展开按钮 */}
