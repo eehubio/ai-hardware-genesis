@@ -12,7 +12,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
   const [chatInput, setChatInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [zoomedMessage, setZoomedMessage] = useState<string | null>(null);
-  const [aiCollapsed, setAiCollapsed] = useState(false);
+  const [aiCollapsed, setAiCollapsed] = useState(true);
   const [messages, setMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([
     { role: 'assistant', text: "你好！我是 **Seeed 固件助手**。我已经根据你的硬件布局生成了基础代码，有什么需要我定制修改的吗？\n\n例如：\n- *改变传感器采样频率*\n- *添加 OLED 屏幕显示逻辑*\n- *编写超声波避障算法*" }
   ]);
@@ -212,19 +212,20 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 </div>
              </div>
 
-             <div className={`bg-indigo-600 rounded-eng-xl text-white shadow-lg relative overflow-hidden flex flex-col border border-white/10 ${aiCollapsed ? 'shrink-0' : 'flex-1 min-h-0'}`}>
-                <button onClick={() => setAiCollapsed(v => !v)} className="w-full p-3 bg-indigo-700/50 flex items-center justify-between border-b border-white/10 shrink-0 hover:bg-indigo-700/70 transition-colors">
+             {/* AI 助手:悬浮按钮 + 弹出面板 */}
+             {!aiCollapsed && (
+             <div className="fixed bottom-24 right-6 z-[150] w-80 max-w-[calc(100vw-3rem)] h-[28rem] max-h-[70vh] bg-indigo-600 rounded-eng-xl text-white shadow-2xl overflow-hidden flex flex-col border border-white/10 animate-in fade-in slide-in-from-bottom-4 duration-200">
+                <div className="w-full p-3 bg-indigo-700/50 flex items-center justify-between border-b border-white/10 shrink-0">
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 bg-white/20 rounded-eng flex items-center justify-center text-body">🤖</div>
                     <div className="text-left">
                       <h4 className="text-body font-semibold">AI 固件助手</h4>
-                      <div className="text-meta text-indigo-300">点此{aiCollapsed ? '展开' : '收起'}对话</div>
+                      <div className="text-meta text-indigo-300">让 AI 帮你改代码</div>
                     </div>
                   </div>
-                  {isAiThinking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <span className="text-indigo-300">{aiCollapsed ? '▼' : '▲'}</span>}
-                </button>
+                  <button onClick={() => setAiCollapsed(true)} className="text-indigo-200 hover:text-white text-lg px-1" title="收起">✕</button>
+                </div>
 
-                {!aiCollapsed && (<>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-indigo-400/50">
                   {messages.map((msg, i) => (
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -248,13 +249,13 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                   ))}
                   {isAiThinking && (
                     <div className="flex justify-start">
-                      <div className="bg-white/5 border border-white/10 p-4 rounded-3xl rounded-tl-none flex items-center gap-3">
+                      <div className="bg-white/5 border border-white/10 p-3 rounded-eng-lg flex items-center gap-2">
                         <div className="flex gap-1">
                           <div className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce" />
                           <div className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce [animation-delay:0.2s]" />
                           <div className="w-1 h-1 bg-indigo-300 rounded-full animate-bounce [animation-delay:0.4s]" />
                         </div>
-                        <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest">Thinking...</span>
+                        <span className="text-meta text-indigo-200">Thinking...</span>
                       </div>
                     </div>
                   )}
@@ -275,8 +276,18 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                     </button>
                   </div>
                 </form>
-                </>)}
              </div>
+             )}
+
+             {/* 悬浮触发钮 */}
+             <button
+               onClick={() => setAiCollapsed(v => !v)}
+               className="fixed bottom-6 right-6 z-[150] w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all hover:scale-105 active:scale-95"
+               title="AI 固件助手"
+             >
+               {aiCollapsed ? '🤖' : '✕'}
+             </button>
+
 
              <div className="bg-ink-900 p-4 rounded-eng-xl border border-ink-800 shrink-0">
                 <div className="text-meta font-semibold text-ink-400 uppercase tracking-wide mb-3 flex items-center gap-2">

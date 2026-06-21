@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GoogleGenAI, Type } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
+import { generateProductRender } from '../services/geminiService';
 
 const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<React.SetStateAction<ProjectState>> }> = ({ state, setState }) => {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -16,6 +17,12 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   const [aiInput, setAiInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [aiMessage, setAiMessage] = useState('我是结构 AI 助手。您可以告诉我：\n- "把外壳变得更圆一些"\n- "增加壁厚，让它更结实"\n- "把高度增加 10mm"');
+
+  // 产品效果图状态
+  const [renderImg, setRenderImg] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [showRenderModal, setShowRenderModal] = useState(false);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -48,6 +55,46 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
 
   const shellW = params.width;
   const shellH = params.height;
+
+  // 根据当前方案 + 外壳参数,自动拼出工业设计 prompt 并生成效果图
+  const handleGenerateRender = async () => {
+    setIsRendering(true);
+    setRenderError(null);
+    setShowRenderModal(true);
+
+    const comps = state.components || [];
+    const hasOLED = comps.some((c: any) => /oled|lcd|display|屏/i.test(c.id + (c.name || '')));
+    const hasKnob = comps.some((c: any) => /encoder|rotary|旋钮/i.test(c.id + (c.name || '')));
+    const hasButton = comps.some((c: any) => /button|switch|按钮|key/i.test(c.id + (c.name || '')));
+    const moduleNames = comps.filter((c: any) => c.type !== 'mcu').map((c: any) => c.name || c.id);
+
+    const materialDesc = params.process === 'CNC' ? 'matte black CNC-machined aluminum' :
+                         params.process === 'INJECTION' ? 'matte dark plastic injection-molded' : 'matte 3D-printed';
+
+    const features: string[] = [];
+    if (hasOLED) features.push('a small OLED display on the top face showing UI');
+    if (hasKnob) features.push('a metal rotary knob');
+    if (hasButton) features.push('a few tactile control buttons');
+    features.push('a USB-C port on the front edge');
+
+    const appHint = (state as any).projectName || (state as any).intent || 'smart hardware device';
+
+    const prompt = `Professional industrial design product render, photorealistic, studio lighting, soft neutral background, 3/4 top-down angle. ` +
+      `A compact ${appHint} electronic device. ` +
+      `${materialDesc} enclosure, dimensions approximately ${Math.round(shellW)}×${Math.round(shellH)}×${Math.round(params.depth)}mm, ` +
+      `with ${params.radius}mm rounded corners. ` +
+      `Features: ${features.join(', ')}. ` +
+      `Modules inside: ${moduleNames.join(', ') || 'sensor modules'}. ` +
+      `Clean minimal premium consumer-electronics aesthetic, high detail, sharp focus, no text watermark.`;
+
+    const result = await generateProductRender(prompt);
+    if (result.image) {
+      setRenderImg(result.image);
+    } else {
+      setRenderError(result.error || '生成失败,请重试。');
+    }
+    setIsRendering(false);
+  };
 
   const handleAiAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -766,24 +813,66 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   );
 
   return (
-    <div className={`min-h-full transition-all duration-700 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-slate-50 p-5'}`}>
+    <div className={`min-h-full transition-all duration-500 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-ink-50 p-5'}`}>
+      {/* 产品效果图弹窗 */}
+      {showRenderModal && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => !isRendering && setShowRenderModal(false)}>
+          <div className="bg-white rounded-eng-xl shadow-2xl max-w-2xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-ink-200">
+              <h3 className="text-strong text-ink-900 flex items-center gap-2">AI 产品效果图 <span className="text-meta font-mono text-brand-600 border border-brand-200 bg-brand-50 px-1.5 py-0.5 rounded-eng">Nano Banana</span></h3>
+              <button onClick={() => !isRendering && setShowRenderModal(false)} className="text-ink-400 hover:text-ink-700 text-lg" disabled={isRendering}>✕</button>
+            </div>
+            <div className="p-5">
+              {isRendering ? (
+                <div className="aspect-[4/3] flex flex-col items-center justify-center gap-3 text-ink-400">
+                  <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
+                  <div className="text-body">正在根据当前外壳与模块生成效果图…</div>
+                  <div className="text-meta">约 5-15 秒</div>
+                </div>
+              ) : renderError ? (
+                <div className="aspect-[4/3] flex flex-col items-center justify-center gap-3 text-center">
+                  <div className="text-body text-red-500">{renderError}</div>
+                  <button onClick={handleGenerateRender} className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">重试</button>
+                </div>
+              ) : renderImg ? (
+                <div className="space-y-3">
+                  <img src={renderImg} alt="产品效果图" className="w-full rounded-eng-lg border border-ink-200" />
+                  <div className="flex gap-2">
+                    <a href={renderImg} download="product-render.png" className="flex-1 text-center px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">下载图片</a>
+                    <button onClick={handleGenerateRender} className="px-4 py-2 bg-white border border-ink-200 text-ink-700 rounded-eng text-body font-semibold hover:bg-ink-50">重新生成</button>
+                  </div>
+                  <p className="text-meta text-ink-400">效果图由 AI 根据外壳参数与模块清单生成,仅供概念展示,非最终产品外观。</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!isFullscreen && (
-        <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto mb-6 flex items-center justify-between gap-6">
           <div>
             <h2 className="text-h2 text-ink-900 flex items-center gap-2.5">
                工业设计与仿真 <span className="text-brand-600 text-meta font-mono font-medium border border-brand-200 bg-brand-50 px-2 py-0.5 rounded-eng">Engine v2.5</span>
             </h2>
             <p className="text-body text-ink-500 mt-1">物理精准度 ±0.1mm · 通过 WebGL 实时仿真外壳结构与内部干涉</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={handleGenerateRender}
+              className="px-4 py-2.5 bg-white border border-brand-300 text-brand-700 rounded-eng-lg text-body font-semibold hover:bg-brand-50 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              <span>生成效果图</span>
+            </button>
             <button 
               onClick={() => setState(p => ({ ...p, currentStep: 4 }))}
-              className="px-10 py-4 bg-green-600 text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-green-700 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+              className="px-4 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1.5"
             >
               <span>进入仿真校验</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
             </button>
-            <button className="px-10 py-4 bg-slate-900 text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-black transition-all hover:scale-105 active:scale-95">
+            <button className="px-4 py-2.5 bg-ink-800 text-white rounded-eng-lg text-body font-semibold hover:bg-ink-900 transition-colors">
                 导出 STEP 制造文件
             </button>
           </div>

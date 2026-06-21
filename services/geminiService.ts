@@ -227,3 +227,20 @@ export const generatePCBlayout = async (state: ProjectState) => {
     return null;
   }
 };
+
+// 生成产品工业设计效果图(Nano Banana)
+export const generateProductRender = async (prompt: string): Promise<{ image?: string; error?: string }> => {
+  try {
+    const res = await fetch("/api/render-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data?.error || `服务状态 ${res.status}` };
+    return { image: data.image };
+  } catch (error: any) {
+    console.error("Render-image fetch error:", error);
+    return { error: "生成效果图失败,请稍后重试。" };
+  }
+};
