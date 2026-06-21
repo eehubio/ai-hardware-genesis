@@ -770,10 +770,10 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       {!isFullscreen && (
         <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between">
           <div>
-            <h2 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-4">
-               工业设计与仿真 <span className="text-indigo-600 text-xl font-medium tracking-normal">/ Engine v2.5</span>
+            <h2 className="text-h2 text-ink-900 flex items-center gap-2.5">
+               工业设计与仿真 <span className="text-brand-600 text-meta font-mono font-medium border border-brand-200 bg-brand-50 px-2 py-0.5 rounded-eng">Engine v2.5</span>
             </h2>
-            <p className="text-sm text-slate-500 font-medium tracking-tight">物理精准度：±0.1mm。正在通过 WebGL 实时仿真外壳结构与内部干涉。</p>
+            <p className="text-body text-ink-500 mt-1">物理精准度 ±0.1mm · 通过 WebGL 实时仿真外壳结构与内部干涉</p>
           </div>
           <div className="flex items-center gap-4">
             <button 
