@@ -14,6 +14,7 @@ interface SidebarProps {
   onAISend: (input: string) => void;
   onApplySolution: (ids: string[]) => void;
   isProcessing: boolean;
+  onCollapse?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -23,7 +24,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   aiHistory,
   onAISend,
   onApplySolution,
-  isProcessing
+  isProcessing,
+  onCollapse
 }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'assistant'>('library');
   const [filter, setFilter] = useState<string | 'all'>('all');
@@ -332,7 +334,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-[300px] bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-[10px_0_30px_rgba(0,0,0,0.03)] z-30 transition-all duration-300">
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 bg-slate-50/30">
+      <div className="flex border-b border-slate-200 bg-slate-50/30 items-stretch">
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="px-3 text-ink-300 hover:text-ink-600 transition-colors text-sm"
+            title="收起模块库"
+          >
+            ◀
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setActiveTab('library')}

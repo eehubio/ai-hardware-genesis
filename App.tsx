@@ -40,6 +40,18 @@ const App: React.FC = () => {
   // 模块库改为从线上「模块数据平台」API 异步加载（单一数据源）。
   // 启动时先空着，下方 useEffect 拉取后填入；加载期间显示提示。
   const [libraryLoading, setLibraryLoading] = useState(true);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+
+  // 窄屏自动收起右侧面板，给画布让出空间
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 1180) setRightPanelCollapsed(true);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const [state, setState] = useState<ProjectState>({
     mode: WorkflowMode.PROTOTYPE,
@@ -251,19 +263,49 @@ const App: React.FC = () => {
       )}
       <WorkflowProgress steps={state.mode === WorkflowMode.PROTOTYPE ? PROTOTYPE_STEPS : PCB_STEPS} currentStep={state.currentStep} setStep={(s) => setState(prev => ({ ...prev, currentStep: s }))} />
       <div className="flex flex-1 overflow-hidden relative">
-        <Sidebar 
-          mode={state.mode} 
-          state={state} 
-          setState={setState} 
-          aiHistory={aiHistory}
-          onAISend={handleAISubmit}
-          onApplySolution={applySolution}
-          isProcessing={isProcessing}
-        />
-        <main className="flex-1 overflow-y-auto bg-slate-100/50">
+        {!leftPanelCollapsed && (
+          <Sidebar 
+            mode={state.mode} 
+            state={state} 
+            setState={setState} 
+            aiHistory={aiHistory}
+            onAISend={handleAISubmit}
+            onApplySolution={applySolution}
+            isProcessing={isProcessing}
+            onCollapse={() => setLeftPanelCollapsed(true)}
+          />
+        )}
+        <main className="flex-1 overflow-y-auto bg-slate-100/50 relative min-w-0">
           {renderMainContent()}
+          {/* 左栏收起时显示展开按钮 */}
+          {leftPanelCollapsed && (
+            <button
+              onClick={() => setLeftPanelCollapsed(false)}
+              className="absolute top-4 left-4 z-30 px-3 py-2 bg-white border border-ink-200 rounded-eng-lg shadow-md text-body font-semibold text-ink-600 hover:text-ink-900 hover:shadow-lg transition-all flex items-center gap-1.5"
+              title="展开模块库"
+            >
+              库 <span>▶</span>
+            </button>
+          )}
+          {/* 右栏收起时显示展开按钮 */}
+          {rightPanelCollapsed && (
+            <button
+              onClick={() => setRightPanelCollapsed(false)}
+              className="absolute top-4 right-4 z-30 px-3 py-2 bg-white border border-ink-200 rounded-eng-lg shadow-md text-body font-semibold text-ink-600 hover:text-ink-900 hover:shadow-lg transition-all flex items-center gap-1.5"
+              title="展开面板"
+            >
+              <span>◀</span> 面板
+            </button>
+          )}
         </main>
-        <RightPanel state={state} setState={setState} onModeChange={(m) => setState(prev => ({ ...prev, mode: m }))} />
+        {!rightPanelCollapsed && (
+          <RightPanel
+            state={state}
+            setState={setState}
+            onModeChange={(m) => setState(prev => ({ ...prev, mode: m }))}
+            onCollapse={() => setRightPanelCollapsed(true)}
+          />
+        )}
       </div>
     </div>
   );

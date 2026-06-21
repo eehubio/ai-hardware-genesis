@@ -12,6 +12,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
   const [chatInput, setChatInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [zoomedMessage, setZoomedMessage] = useState<string | null>(null);
+  const [aiCollapsed, setAiCollapsed] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([
     { role: 'assistant', text: "你好！我是 **Seeed 固件助手**。我已经根据你的硬件布局生成了基础代码，有什么需要我定制修改的吗？\n\n例如：\n- *改变传感器采样频率*\n- *添加 OLED 屏幕显示逻辑*\n- *编写超声波避障算法*" }
   ]);
@@ -139,9 +140,9 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
           </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-0">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-0">
           {/* Editor Area */}
-          <div className="lg:col-span-8 bg-[#111827] rounded-[40px] overflow-hidden shadow-3xl flex flex-col border border-white/5 relative">
+          <div className="lg:col-span-9 bg-[#111827] rounded-eng-xl overflow-hidden shadow-3xl flex flex-col border border-white/5 relative">
              <div className="flex items-center justify-between px-8 py-4 bg-slate-900/80 backdrop-blur-md border-b border-white/5 shrink-0">
                 <div className="flex items-center gap-3">
                    <div className="flex gap-1.5">
@@ -171,7 +172,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
           </div>
 
           {/* AI Interactive Sidebar */}
-          <div className="lg:col-span-4 flex flex-col space-y-4 h-full min-h-0">
+          <div className="lg:col-span-3 flex flex-col space-y-3 h-full min-h-0">
              {/* 真实固件信息卡:目标板、依赖库、烧录 */}
              <div className="bg-ink-900 rounded-eng-xl border border-ink-800 p-4 shrink-0 space-y-3">
                 <div className="flex items-center justify-between">
@@ -211,19 +212,20 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 </div>
              </div>
 
-             <div className="flex-1 bg-indigo-600 rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col border border-white/10 min-h-0">
-                <div className="p-6 bg-indigo-700/50 backdrop-blur-sm flex items-center justify-between border-b border-white/10 shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center text-xl shadow-inner">🤖</div>
-                    <div>
-                      <h4 className="text-[10px] font-black uppercase tracking-widest">AI 固件助手</h4>
-                      <div className="text-[9px] font-bold text-indigo-300 tracking-tight">Semantic Code Analysis</div>
+             <div className={`bg-indigo-600 rounded-eng-xl text-white shadow-lg relative overflow-hidden flex flex-col border border-white/10 ${aiCollapsed ? 'shrink-0' : 'flex-1 min-h-0'}`}>
+                <button onClick={() => setAiCollapsed(v => !v)} className="w-full p-3 bg-indigo-700/50 flex items-center justify-between border-b border-white/10 shrink-0 hover:bg-indigo-700/70 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 bg-white/20 rounded-eng flex items-center justify-center text-body">🤖</div>
+                    <div className="text-left">
+                      <h4 className="text-body font-semibold">AI 固件助手</h4>
+                      <div className="text-meta text-indigo-300">点此{aiCollapsed ? '展开' : '收起'}对话</div>
                     </div>
                   </div>
-                  {isAiThinking && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
-                </div>
+                  {isAiThinking ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <span className="text-indigo-300">{aiCollapsed ? '▼' : '▲'}</span>}
+                </button>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-indigo-400/50">
+                {!aiCollapsed && (<>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-indigo-400/50">
                   {messages.map((msg, i) => (
                     <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div 
@@ -280,6 +282,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                     </button>
                   </div>
                 </form>
+                </>)}
              </div>
 
              <div className="bg-ink-900 p-4 rounded-eng-xl border border-ink-800 shrink-0">
