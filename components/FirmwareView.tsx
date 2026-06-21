@@ -118,23 +118,23 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
   return (
     <div className="p-8 h-full flex flex-col bg-[#0a0f14] relative overflow-hidden">
       <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col space-y-6 min-h-0">
-        <div className="flex items-center justify-between shrink-0">
+        <div className="flex items-center justify-between shrink-0 gap-4">
           <div>
-            <h2 className="text-3xl font-black text-white tracking-tight">固件智造 <span className="text-green-500">/ SDK Genesis</span></h2>
-            <p className="text-sm text-slate-500 font-medium">驱动层代码已根据您的物理布局自动映射，支持实时编辑与导出</p>
+            <h2 className="text-h2 text-white">固件构建 <span className="text-brand-400 text-meta font-mono border border-brand-500/40 bg-brand-500/10 px-2 py-0.5 rounded-eng align-middle">SDK Genesis</span></h2>
+            <p className="text-body text-ink-400 mt-1">根据物理布局自动生成驱动代码,可实时编辑与导出</p>
           </div>
-          <div className="flex items-center gap-4">
-             <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800">
-                <button onClick={() => {setLang('arduino'); setIsEdited(false);}} className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all ${lang === 'arduino' ? 'bg-green-600 text-white' : 'text-slate-500 hover:text-white'}`}>Arduino (C++)</button>
-                <button onClick={() => {setLang('micropython'); setIsEdited(false);}} className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all ${lang === 'micropython' ? 'bg-green-600 text-white' : 'text-slate-500 hover:text-white'}`}>MicroPython</button>
+          <div className="flex items-center gap-2.5 shrink-0">
+             <div className="flex bg-ink-900 p-1 rounded-eng-lg border border-ink-800">
+                <button onClick={() => {setLang('arduino'); setIsEdited(false);}} className={`px-4 py-2 rounded-eng text-body font-semibold transition-colors ${lang === 'arduino' ? 'bg-brand-600 text-white' : 'text-ink-400 hover:text-white'}`}>Arduino (C++)</button>
+                <button onClick={() => {setLang('micropython'); setIsEdited(false);}} className={`px-4 py-2 rounded-eng text-body font-semibold transition-colors ${lang === 'micropython' ? 'bg-brand-600 text-white' : 'text-ink-400 hover:text-white'}`}>MicroPython</button>
              </div>
-             <button onClick={() => {setIsEdited(false); setCurrentCode(generateFullCode(lang));}} className="px-5 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-black hover:bg-slate-700 border border-slate-700 transition-all">重新生成</button>
+             <button onClick={() => {setIsEdited(false); setCurrentCode(generateFullCode(lang));}} className="px-4 py-2 bg-ink-800 text-ink-300 rounded-eng text-body font-semibold hover:bg-ink-700 border border-ink-700 transition-colors">重新生成</button>
              <button 
                 onClick={() => setState(p => ({ ...p, currentStep: 3 }))}
-                className="px-8 py-2.5 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg shadow-green-900/40 hover:bg-green-700 transition-all uppercase tracking-widest flex items-center gap-2"
+                className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1.5"
               >
                 <span>设计外壳</span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
               </button>
           </div>
         </div>

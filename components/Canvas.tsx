@@ -323,7 +323,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
                 key={comp.instanceId} 
                 onMouseDown={(e) => handleMouseDown(e, comp.instanceId, currentX, currentY)} 
                 style={{ left: `${currentX}px`, top: `${currentY}px`, position: 'absolute' }} 
-                className={`select-none ${isBeingDragged ? 'z-50 scale-105 transition-none shadow-2xl' : 'z-20'} ${comp.isSimplified ? 'min-w-max min-h-max bg-transparent' : 'w-64 bg-white border border-slate-200 rounded-[32px] shadow-xl p-5 group cursor-grab active:cursor-grabbing hover:border-green-400 transition-colors'}`}
+                className={`select-none ${isBeingDragged ? 'z-50 scale-105 transition-none shadow-2xl' : 'z-20'} ${comp.isSimplified ? 'min-w-max min-h-max bg-transparent' : 'w-64 bg-white border border-ink-200 rounded-eng-xl shadow-lg p-5 group cursor-grab active:cursor-grabbing hover:border-brand-400 transition-colors'}`}
               >
                 {comp.isSimplified ? (
                   (comp.isChipOnly ? comp.footprint : comp.moduleFootprint) ? renderFootprint(comp.isChipOnly ? comp.footprint! : comp.moduleFootprint!, designator, comp.instanceId) : <div className="w-12 h-12 bg-slate-900 border-2 border-slate-400 rounded-sm flex items-center justify-center text-[9px] text-white font-mono">{designator}</div>
@@ -383,11 +383,19 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
           })}
         </div>
       </div>
+      {!isPcb && state.components.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="text-center">
+            <div className="text-h3 text-ink-300 mb-1">画布为空</div>
+            <p className="text-body text-ink-400">从左侧库拖入模块,或用 AI 设计助手描述需求生成方案</p>
+          </div>
+        </div>
+      )}
       <div className="absolute bottom-10 right-10 flex gap-4 z-40 pointer-events-none">
         {!isPcb && state.currentStep === 0 && (
           <button 
             onClick={() => setState(p => ({ ...p, currentStep: 1 }))}
-            className="pointer-events-auto px-8 py-4 bg-green-600 text-white rounded-2xl shadow-2xl font-black text-xs hover:scale-105 transition-all flex items-center gap-2"
+            className="pointer-events-auto px-5 py-2.5 bg-brand-600 text-white rounded-eng-lg font-semibold text-body hover:bg-brand-700 transition-colors flex items-center gap-1.5 shadow-lg"
           >
             <span>生成接线图</span>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
