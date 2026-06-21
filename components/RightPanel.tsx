@@ -229,171 +229,103 @@ interface ComponentDbTabsProps {
 }
 
 const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateCompFootprint, isPcbMode }) => {
-  const [subTab, setSubTab] = useState<'info' | 'tech' | 'docs'>('info');
+  const e = component.electrical;
+  const p = component.physical;
+  const protocols = e?.protocols || [];
+  const pinMap = e?.pinMapping && Object.keys(e.pinMapping).length > 0 ? e.pinMapping : null;
+  const docUrl = (component.software as any)?.documentationUrl;
+  const ghUrl = (component.software as any)?.githubUrl;
+  const libs = component.software?.requiredLibraries || [];
 
-  const functionalities = component.functionalities || [
-    `作为 ${component.type === 'mcu' ? '核心微控制器' : '外部模块'} 实现系统的底层逻辑与硬件联动`,
-    `额定电压范围：${component.electrical?.voltageRange?.[0] || 3.3}V - ${component.electrical?.voltageRange?.[1] || 5.0}V`,
-    `芯片静态功耗：${component.electrical?.currentDraw || 10}mA，总线协议支持。`
-  ];
-
-  const designFiles = component.designProjectFiles || [
-    `${component.id}_v1.0.schlib (元件设计原理图符号文件)`,
-    `${component.id}_v1.0.kicad_mod (元器件物理焊接封装文件)`
-  ];
-
-  const llmTags = component.llmPromptTags || [component.id, component.type, 'Grove', 'Seeed_Studio'];
-
+  // 仅展示真实存在的数据,缺失的字段直接不显示(不编套话)
   return (
-    <div className="space-y-4">
-      {/* Sub-tabs buttons */}
-      <div className="flex bg-white/65 p-1 rounded-xl border border-indigo-100 gap-1">
-        {[
-          { id: 'info', label: '概述描述' },
-          { id: 'tech', label: '硬件定义' },
-          { id: 'docs', label: '设计文件' }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setSubTab(tab.id as any)}
-            className={`flex-1 py-1.5 rounded-lg text-center text-[10px] font-bold transition-all ${subTab === tab.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-400 hover:text-indigo-600'}`}
-          >
-            {tab.label}
-          </button>
-        ))}
+    <div className="space-y-2.5 text-body">
+      {/* 电气参数:真数据 */}
+      <div className="grid grid-cols-3 gap-1.5">
+        <div className="bg-white border border-ink-200 rounded-eng p-2">
+          <div className="text-meta text-ink-400">电压</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5">{e?.voltageRange ? `${e.voltageRange[0]}~${e.voltageRange[1]}V` : '—'}</div>
+        </div>
+        <div className="bg-white border border-ink-200 rounded-eng p-2">
+          <div className="text-meta text-ink-400">电流</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5">{e?.currentDraw != null ? `${e.currentDraw}mA` : '—'}</div>
+        </div>
+        <div className="bg-white border border-ink-200 rounded-eng p-2">
+          <div className="text-meta text-ink-400">接口</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5">{p?.connectorType || '—'}</div>
+        </div>
       </div>
 
-      <div className="text-[11px] text-slate-600 space-y-3">
-        {subTab === 'info' && (
-          <div className="space-y-3 animate-in fade-in duration-200">
-            <div>
-              <span className="font-bold text-slate-800 block mb-1">🔍 数据库功能描述</span>
-              <p className="text-slate-500 leading-relaxed text-[10px]">{component.description || component.spec || '暂无详细描述描述'}</p>
-            </div>
-            {functionalities.length > 0 && (
-              <div>
-                <span className="font-bold text-slate-800 block mb-1">🌟 模块核心功能</span>
-                <ul className="list-disc pl-4 space-y-1 text-slate-500 text-[10px]">
-                  {functionalities.map((func: string, i: number) => (
-                    <li key={i}>{func}</li>
-                  ))}
-                </ul>
+      {/* 协议:有才显示 */}
+      {protocols.length > 0 && (
+        <div className="flex flex-wrap gap-1 items-center">
+          <span className="text-meta text-ink-400 mr-1">协议</span>
+          {protocols.map((pr: string, i: number) => (
+            <span key={i} className="text-meta font-mono bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded-eng">{pr}</span>
+          ))}
+        </div>
+      )}
+
+      {/* 物理尺寸:有才显示 */}
+      {p?.dimensions && (
+        <div className="flex items-center gap-2 text-meta">
+          <span className="text-ink-400">尺寸</span>
+          <span className="font-mono text-ink-700">{p.dimensions.width}×{p.dimensions.height}×{p.dimensions.depth}mm</span>
+          {p.weight != null && <span className="text-ink-400">· {p.weight}g</span>}
+        </div>
+      )}
+
+      {/* 引脚映射:有真实数据才显示 */}
+      {pinMap && (
+        <div className="bg-white border border-ink-200 rounded-eng p-2">
+          <div className="text-meta text-ink-400 mb-1">引脚映射</div>
+          <div className="space-y-0.5">
+            {Object.entries(pinMap).map(([pin, func]: any, i) => (
+              <div key={i} className="flex justify-between text-meta font-mono py-0.5 border-b border-dotted border-ink-100 last:border-0">
+                <span className="text-ink-500">{pin}</span>
+                <span className="text-brand-600">{func}</span>
               </div>
-            )}
-            <div>
-              <span className="font-bold text-slate-800 block mb-1">🏷️ 意图识别/智能体适配标签</span>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {llmTags.map((tag: string, i: number) => (
-                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[8px] font-mono rounded font-bold uppercase">{tag}</span>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {subTab === 'tech' && (
-          <div className="space-y-3 animate-in fade-in duration-200">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-white p-2 rounded-xl border border-indigo-100/30">
-                <span className="text-[9px] text-slate-400 block font-bold">硬件供电方式</span>
-                <span className="text-[10px] text-indigo-700 font-bold block mt-0.5">{component.voltageSource || `${component.electrical?.voltageRange?.[0]}-${component.electrical?.voltageRange?.[1]}V`}</span>
-              </div>
-              <div className="bg-white p-2 rounded-xl border border-indigo-100/30">
-                <span className="text-[9px] text-slate-400 block font-bold">运行供电静态电流</span>
-                <span className="text-[10px] text-indigo-700 font-bold block mt-0.5">{component.electrical?.currentDraw || '10'} mA</span>
-              </div>
-              <div className="bg-white p-2 rounded-xl border border-indigo-100/30 col-span-2">
-                <span className="text-[9px] text-slate-400 block font-bold">外部物理物理尺寸</span>
-                <span className="text-[10px] text-slate-700 font-bold block mt-0.5">
-                  长轴 {component.physical?.dimensions?.width || 20}mm × 纵宽 {component.physical?.dimensions?.height || 20}mm × 高/厚 {component.physical?.dimensions?.depth || 5}mm
-                </span>
-                <span className="text-[8px] text-slate-400 block mt-1">
-                  连接接口: {component.physical?.connectorType || 'Grove'} · 净重: {component.physical?.weight || 3}g
-                </span>
-              </div>
-            </div>
+      {/* 依赖库:有才显示 */}
+      {libs.length > 0 && (
+        <div className="flex flex-wrap gap-1 items-center">
+          <span className="text-meta text-ink-400 mr-1">库</span>
+          {libs.map((l: string, i: number) => (
+            <span key={i} className="text-meta font-mono bg-ink-100 text-ink-600 px-1.5 py-0.5 rounded-eng">{l}</span>
+          ))}
+        </div>
+      )}
 
-            {component.electrical?.pinMapping && Object.keys(component.electrical.pinMapping).length > 0 && (
-              <div className="bg-white p-2.5 rounded-xl border border-indigo-100/30">
-                <span className="text-[9px] font-bold text-slate-800 block mb-1">📌 总线引脚/管脚定义</span>
-                <div className="space-y-1">
-                  {Object.entries(component.electrical.pinMapping).map(([pin, func]: any, i) => (
-                    <div key={i} className="flex justify-between items-center text-[9px] py-0.5 border-b border-dotted border-slate-150 last:border-0">
-                      <span className="text-slate-400 font-bold uppercase">{pin} 物理管脚</span>
-                      <span className="text-indigo-600 font-mono font-bold">{func} 系统分配信号</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+      {/* 文档链接:有才显示 */}
+      {(docUrl || ghUrl) && (
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
+          {docUrl && (
+            <a href={docUrl} target="_blank" rel="noreferrer" className="text-meta text-brand-600 hover:text-brand-700 border border-brand-200 hover:bg-brand-50 px-2 py-1 rounded-eng transition-colors">规格书 ↗</a>
+          )}
+          {ghUrl && (
+            <a href={ghUrl} target="_blank" rel="noreferrer" className="text-meta text-brand-600 hover:text-brand-700 border border-brand-200 hover:bg-brand-50 px-2 py-1 rounded-eng transition-colors">源码 ↗</a>
+          )}
+        </div>
+      )}
+
+      {/* PCB 模式:封装切换 */}
+      {isPcbMode && component.availableFootprints && component.availableFootprints.length > 0 && (
+        <div className="pt-2 border-t border-ink-200 space-y-1.5">
+          <span className="text-meta text-ink-400">PCB 封装</span>
+          <div className="grid grid-cols-2 gap-1">
+            {component.availableFootprints.map((fp: any, i: number) => (
+              <button key={i} onClick={() => updateCompFootprint(fp)}
+                className={`p-1.5 rounded-eng text-meta font-mono border text-left transition-colors truncate ${component.footprint?.packageName === fp.packageName ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-ink-700 border-ink-200 hover:border-brand-300'}`}>
+                {fp.packageName}
+              </button>
+            ))}
           </div>
-        )}
-
-        {subTab === 'docs' && (
-          <div className="space-y-3 animate-in fade-in duration-200">
-            <div>
-              <span className="font-bold text-slate-800 block mb-1">📂 物理设计CAD工程文件</span>
-              <div className="bg-slate-900/5 text-slate-500 font-mono text-[9px] p-2 rounded-xl border border-slate-200 space-y-1">
-                {designFiles.map((file: string, i: number) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <span>⚙️</span>
-                    <span className="truncate">{file}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <span className="font-bold text-slate-800 block mb-1">🔌 驱动程序与核心依赖软件库</span>
-              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100/50 px-2.5 py-1 rounded inline-block font-bold">
-                🔗 {component.driverRequired || component.software?.requiredLibraries?.[0] || '默认包含（无需额外驱动）'}
-              </span>
-            </div>
-
-            <div className="pt-1.5 space-y-1.5">
-              {component.software?.documentationUrl && (
-                <a
-                  href={component.software.documentationUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between p-2 rounded-xl bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-250 text-indigo-600 transition-all text-[9px] font-bold shadow-sm"
-                >
-                  <span>🌐 查阅官方规格书 Datasheet 链接</span>
-                  <span>↗</span>
-                </a>
-              )}
-              {component.software?.githubUrl && (
-                <a
-                  href={component.software.githubUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between p-2 rounded-xl bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-250 text-indigo-600 transition-all text-[9px] font-bold shadow-sm"
-                >
-                  <span>📦 查阅参考项目、驱动源码链接</span>
-                  <span>↗</span>
-                </a>
-              )}
-            </div>
-            
-            {isPcbMode && component.availableFootprints && (
-              <div className="pt-2 border-t border-indigo-100/50 space-y-2">
-                <span className="text-[9px] font-black text-indigo-550 uppercase">KiCad 物理贴片封装切换</span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {component.availableFootprints.map((fp: any, i: number) => (
-                    <button
-                      key={i}
-                      onClick={() => updateCompFootprint(fp)}
-                      className={`p-2 rounded-xl text-[9px] font-bold border text-left transition-all truncate ${component.footprint?.packageName === fp.packageName ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-700 border-indigo-100 hover:border-indigo-200'}`}
-                    >
-                      {fp.packageName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

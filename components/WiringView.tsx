@@ -171,48 +171,38 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
           </div>
         </div>
 
-        {/* 核心卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-200">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-slate-300" /> 核心控制器详情
-            </h3>
-            {mcu ? (
-              <div className="flex items-center gap-8">
-                <div className="w-28 h-28 bg-slate-50 rounded-[28px] border border-slate-100 flex items-center justify-center p-3 overflow-hidden">
-                  <img src={mcu.thumb} className="max-w-full max-h-full object-contain" alt={mcu.name} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-2xl font-black text-slate-900 tracking-tighter leading-tight uppercase">{mcu.name}</div>
-                  <div className="text-[10px] text-slate-400 font-mono mt-2 bg-slate-100 px-2 py-1 rounded inline-block uppercase">UID: {mcu.instanceId.split('-')[1].slice(-8)}</div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-black rounded-lg border border-blue-100 uppercase">I2C BUS</span>
-                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-[10px] font-black rounded-lg border border-amber-100 uppercase">UART RX/TX</span>
-                  </div>
+        {/* 核心信息条:主控 + 统计,一行紧凑展示 */}
+        <div className="bg-white p-4 rounded-eng-lg border border-ink-200 flex items-center gap-4 flex-wrap">
+          {mcu ? (
+            <>
+              <div className="w-14 h-14 bg-ink-50 rounded-eng border border-ink-200 flex items-center justify-center p-1.5 overflow-hidden shrink-0">
+                <img src={mcu.thumb} className="max-w-full max-h-full object-contain" alt={mcu.name} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-strong text-ink-900">{mcu.name}</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-meta font-mono text-brand-700 bg-brand-50 border border-brand-200 px-1.5 py-0.5 rounded-eng">I2C</span>
+                  <span className="text-meta font-mono text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-eng">UART</span>
                 </div>
               </div>
-            ) : (
-              <div className="py-12 text-center text-slate-300 italic border-2 border-dashed rounded-[24px]">未检测到核心板</div>
-            )}
-          </div>
-
-          <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-200 flex flex-col justify-center">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-8">连接拓扑统计</h3>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="p-6 bg-slate-50 rounded-[24px] border border-slate-100 text-center">
-                <div className="text-3xl font-black text-slate-900 mb-1">{peripherals.length * 4}</div>
-                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">跳线线缆 (Wires)</div>
-              </div>
-              <div className="p-6 bg-slate-50 rounded-[24px] border border-slate-100 text-center">
-                <div className="text-3xl font-black text-slate-900 mb-1">{peripherals.length}</div>
-                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">外设模块 (Nodes)</div>
-              </div>
+            </>
+          ) : (
+            <div className="text-body text-ink-300 italic">未检测到主控</div>
+          )}
+          <div className="flex gap-6 ml-auto pr-2">
+            <div className="text-center">
+              <div className="text-h3 text-ink-900">{peripherals.length * 4}</div>
+              <div className="text-meta text-ink-400">跳线</div>
+            </div>
+            <div className="text-center">
+              <div className="text-h3 text-ink-900">{peripherals.length}</div>
+              <div className="text-meta text-ink-400">外设</div>
             </div>
           </div>
         </div>
 
         {/* 详细接线表 */}
-        <div className="bg-white rounded-[44px] shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-eng-xl shadow-sm border border-ink-200 overflow-hidden">
           <table className="w-full text-left table-fixed border-collapse">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
