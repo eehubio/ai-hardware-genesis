@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: 'GEMINI_API_KEY environment variable is not configured on Vercel.' });
   }
 
-  const { prompt } = req.body;
+  const { prompt, refImage } = req.body;
   if (!prompt) {
     return res.status(400).json({ error: 'Missing prompt in request body.' });
   }
@@ -19,9 +19,27 @@ export default async function handler(req: any, res: any) {
   const ai = new GoogleGenAI({ apiKey });
 
   try {
+    // 构建 contents:有参考图则走图生图(文本 + 图像),否则纯文本生成
+    let contents: any;
+    if (refImage && typeof refImage === 'string' && refImage.startsWith('data:')) {
+      const match = refImage.match(/^data:(.+?);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const data = match[2];
+        contents = [
+          { inlineData: { mimeType, data } },
+          { text: prompt },
+        ];
+      } else {
+        contents = prompt;
+      }
+    } else {
+      contents = prompt;
+    }
+
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: prompt,
+      contents,
     });
 
     // 从返回的 parts 中提取 base64 图像

@@ -233,7 +233,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                         onClick={() => msg.role === 'assistant' && setZoomedMessage(msg.text)}
                         className={`max-w-[88%] px-3 py-2.5 rounded-eng-lg text-body leading-relaxed break-words transition-all relative group/msg ${msg.role === 'assistant' ? 'cursor-zoom-in hover:ring-2 hover:ring-white/20' : ''} ${msg.role === 'user' ? 'bg-white/10 border border-white/10 text-white' : 'bg-white text-indigo-900'}`}
                       >
-                        <div className="markdown-body pointer-events-none break-words [&_p]:m-0 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0.5">
+                        <div className="markdown-body pointer-events-none break-words text-body leading-snug [&_p]:m-0 [&_p]:leading-snug [&_ul]:my-1 [&_ul]:pl-4 [&_ul]:space-y-0 [&_ol]:my-1 [&_ol]:pl-4 [&_li]:my-0 [&_li]:leading-snug [&_h1]:text-strong [&_h1]:my-1 [&_h2]:text-strong [&_h2]:my-1 [&_h3]:my-1 [&_pre]:my-1 [&_pre]:text-meta [&_code]:text-meta [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {msg.text}
                           </ReactMarkdown>

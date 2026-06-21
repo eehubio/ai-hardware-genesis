@@ -68,26 +68,40 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     const hasButton = comps.some((c: any) => /button|switch|按钮|key/i.test(c.id + (c.name || '')));
     const moduleNames = comps.filter((c: any) => c.type !== 'mcu').map((c: any) => c.name || c.id);
 
-    const materialDesc = params.process === 'CNC' ? 'matte black CNC-machined aluminum' :
-                         params.process === 'INJECTION' ? 'matte dark plastic injection-molded' : 'matte 3D-printed';
+    const materialDesc = params.process === 'CNC' ? 'matte black anodized CNC aluminum' :
+                         params.process === 'INJECTION' ? 'matte dark plastic' : 'matte 3D-printed';
 
     const features: string[] = [];
-    if (hasOLED) features.push('a small OLED display on the top face showing UI');
-    if (hasKnob) features.push('a metal rotary knob');
-    if (hasButton) features.push('a few tactile control buttons');
-    features.push('a USB-C port on the front edge');
+    if (hasOLED) features.push('a small rectangular OLED screen flush-mounted on the top face');
+    if (hasKnob) features.push('one metal rotary knob');
+    if (hasButton) features.push('a few tactile buttons');
+    features.push('a USB-C port on one side');
 
-    const appHint = (state as any).projectName || (state as any).intent || 'smart hardware device';
+    const appHint = (state as any).projectName || (state as any).intent || 'compact smart device';
 
-    const prompt = `Professional industrial design product render, photorealistic, studio lighting, soft neutral background, 3/4 top-down angle. ` +
-      `A compact ${appHint} electronic device. ` +
-      `${materialDesc} enclosure, dimensions approximately ${Math.round(shellW)}×${Math.round(shellH)}×${Math.round(params.depth)}mm, ` +
-      `with ${params.radius}mm rounded corners. ` +
-      `Features: ${features.join(', ')}. ` +
-      `Modules inside: ${moduleNames.join(', ') || 'sensor modules'}. ` +
-      `Clean minimal premium consumer-electronics aesthetic, high detail, sharp focus, no text watermark.`;
+    // 截取当前 3D 画面作为参考图(图生图,保证形态一致)
+    let refImage: string | null = null;
+    try {
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+        refImage = rendererRef.current.domElement.toDataURL('image/png');
+      }
+    } catch (err) {
+      console.warn('canvas capture failed, fallback to text-only', err);
+    }
 
-    const result = await generateProductRender(prompt);
+    const prompt = refImage
+      ? `Turn this 3D enclosure mockup into a photorealistic professional product render. ` +
+        `Keep the SAME overall shape, proportions and rounded-corner box form as the reference image. ` +
+        `Material: ${materialDesc}, clean seamless finish (NO visible screws, NO exposed PCB, NO open windows, NO dimension annotations or text labels). ` +
+        `Add realistic product details: ${features.join(', ')}. ` +
+        `A ${appHint}. Studio lighting, soft neutral background, 3/4 angle, high detail, premium consumer electronics aesthetic. No text, no watermark, no measurement lines.`
+      : `Professional industrial design product render, photorealistic, studio lighting, soft neutral background, 3/4 top-down angle. ` +
+        `A compact ${appHint} electronic device. ` +
+        `${materialDesc} seamless enclosure approximately ${Math.round(shellW)}×${Math.round(shellH)}×${Math.round(params.depth)}mm with ${params.radius}mm rounded corners. ` +
+        `Features: ${features.join(', ')}. Clean premium aesthetic, NO screws, NO exposed PCB, NO dimension labels, no text watermark.`;
+
+    const result = await generateProductRender(prompt, refImage || undefined);
     if (result.image) {
       setRenderImg(result.image);
     } else {
@@ -172,7 +186,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     camera.position.set(220, 220, 220);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
