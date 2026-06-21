@@ -147,15 +147,15 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
   return (
     <div className="p-8 h-full overflow-y-auto bg-slate-50/50 relative">
       <div ref={reportRef} className="max-w-4xl mx-auto space-y-8 print-container pb-20">
-        <div className="flex items-center justify-between no-print">
+        <div className="flex items-center justify-between no-print gap-4">
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight italic">接线指南 <span className="text-green-600">/ Wiring Guide</span></h2>
-            <p className="text-sm text-slate-500 font-medium">由 Seeed Genesis 引擎实时生成的物理连线文档</p>
+            <h2 className="text-h2 text-ink-900">接线指南 <span className="text-brand-600 text-meta font-mono border border-brand-200 bg-brand-50 px-2 py-0.5 rounded-eng align-middle">Wiring Guide</span></h2>
+            <p className="text-body text-ink-500 mt-1">根据当前方案实时生成的物理连线文档</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 shrink-0">
             <button 
               onClick={() => setState(p => ({ ...p, currentStep: 2 }))}
-              className="px-8 py-3 bg-green-600 text-white rounded-2xl text-sm font-black shadow-2xl hover:bg-green-700 transition-all flex items-center gap-2 active:scale-95"
+              className="px-4 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1.5"
             >
               <span>编写固件</span>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
@@ -163,7 +163,7 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
             <button 
               onClick={handleExportPDF}
               disabled={isExporting}
-              className={`px-6 py-3 bg-slate-900 text-white rounded-2xl text-sm font-black shadow-2xl hover:bg-black transition-all flex items-center gap-2 active:scale-95 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`px-4 py-2.5 bg-ink-800 text-white rounded-eng-lg text-body font-semibold hover:bg-ink-900 transition-colors flex items-center gap-1.5 ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
               <span>{isExporting ? 'PDF 渲染中...' : '生成 PDF 指南'}</span>

@@ -171,8 +171,47 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
           </div>
 
           {/* AI Interactive Sidebar */}
-          <div className="lg:col-span-4 flex flex-col space-y-6 h-full min-h-0">
-             <div className="flex-1 bg-indigo-600 rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col border border-white/10">
+          <div className="lg:col-span-4 flex flex-col space-y-4 h-full min-h-0">
+             {/* 真实固件信息卡:目标板、依赖库、烧录 */}
+             <div className="bg-ink-900 rounded-eng-xl border border-ink-800 p-4 shrink-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-meta font-semibold text-ink-400 uppercase tracking-wide">固件信息</span>
+                  <span className="text-meta text-brand-400 font-mono">{lang === 'arduino' ? 'Arduino' : 'MicroPython'}</span>
+                </div>
+                {/* 目标板 */}
+                <div className="flex items-start gap-2 text-body">
+                  <span className="text-ink-500 shrink-0 w-14">目标板</span>
+                  <span className="text-ink-200 font-mono">{mcu ? mcu.name : '未指定主控'}</span>
+                </div>
+                {/* 依赖库:从生成代码里提取真实 #include */}
+                <div className="flex items-start gap-2 text-body">
+                  <span className="text-ink-500 shrink-0 w-14">依赖库</span>
+                  <div className="flex flex-wrap gap-1">
+                    {(() => {
+                      const libs = Array.from(new Set((currentCode.match(/#include\s+<([^>]+)>/g) || [])
+                        .map(s => s.replace(/#include\s+<|>/g, ''))
+                        .filter(l => !['Arduino.h', 'Wire.h', 'SPI.h'].includes(l))));
+                      if (libs.length === 0) return <span className="text-ink-500 text-meta">仅标准库</span>;
+                      return libs.map(l => <span key={l} className="text-meta font-mono bg-ink-800 text-brand-300 px-1.5 py-0.5 rounded-eng">{l}</span>);
+                    })()}
+                  </div>
+                </div>
+                {/* 烧录提示 */}
+                <div className="flex items-start gap-2 text-body">
+                  <span className="text-ink-500 shrink-0 w-14">烧录</span>
+                  <span className="text-ink-300 text-meta leading-relaxed">
+                    {mcu?.name?.includes('ESP32') ? 'USB 连接 → 选择对应 XIAO ESP32 板 → 上传(必要时按住 BOOT)'
+                     : mcu?.name?.includes('RP2040') ? 'USB 连接 → 双击 RESET 进入 UF2 模式 → 拖入固件'
+                     : mcu?.name?.includes('nRF52840') ? 'USB 连接 → 双击 RESET 进入 bootloader → 上传'
+                     : 'USB 连接开发板 → 在 IDE 选择对应板与串口 → 上传'}
+                  </span>
+                </div>
+                <div className="text-meta text-ink-500 border-t border-ink-800 pt-2 leading-relaxed">
+                  代码由模块数据自动生成,作为起点;烧录前请按接线图核对引脚。
+                </div>
+             </div>
+
+             <div className="flex-1 bg-indigo-600 rounded-[40px] text-white shadow-2xl relative overflow-hidden flex flex-col border border-white/10 min-h-0">
                 <div className="p-6 bg-indigo-700/50 backdrop-blur-sm flex items-center justify-between border-b border-white/10 shrink-0">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center text-xl shadow-inner">🤖</div>
@@ -243,15 +282,15 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 </form>
              </div>
 
-             <div className="bg-slate-900/50 backdrop-blur-md p-6 rounded-[32px] border border-white/5 shadow-xl shrink-0">
-                <div className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-700" /> 硬件资源栈
+             <div className="bg-ink-900 p-4 rounded-eng-xl border border-ink-800 shrink-0">
+                <div className="text-meta font-semibold text-ink-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-500" /> 外设模块 ({peripherals.length})
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {peripherals.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5 group hover:bg-white/10 transition-colors">
-                      <img src={p.thumb} className="w-4 h-4 object-contain opacity-60 group-hover:opacity-100 transition-opacity" />
-                      <span className="text-[9px] font-bold text-slate-400 group-hover:text-slate-200">{p.name.split(' ').pop()}</span>
+                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-ink-800 rounded-eng border border-ink-700 group hover:bg-ink-700 transition-colors">
+                      <img src={p.thumb} className="w-4 h-4 object-contain opacity-70 group-hover:opacity-100 transition-opacity" />
+                      <span className="text-meta font-medium text-ink-300 group-hover:text-ink-100">{p.name.split(' ').pop()}</span>
                     </div>
                   ))}
                 </div>
