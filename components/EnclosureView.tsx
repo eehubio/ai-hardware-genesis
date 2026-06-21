@@ -24,6 +24,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   const [renderError, setRenderError] = useState<string | null>(null);
   const [showRenderModal, setShowRenderModal] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState('');
+  const [imgZoomed, setImgZoomed] = useState(false);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -872,9 +873,17 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   return (
     <div className={`min-h-full transition-all duration-500 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-ink-50 p-5'}`}>
       {/* 产品效果图弹窗 */}
+      {/* 效果图全屏放大 */}
+      {imgZoomed && renderImg && (
+        <div className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setImgZoomed(false)}>
+          <img src={renderImg} alt="产品效果图(放大)" className="max-w-full max-h-full object-contain" />
+          <button onClick={() => setImgZoomed(false)} className="absolute top-5 right-6 text-white/80 hover:text-white text-3xl">✕</button>
+        </div>
+      )}
+
       {showRenderModal && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => !isRendering && setShowRenderModal(false)}>
-          <div className="bg-white rounded-eng-xl shadow-2xl max-w-2xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-eng-xl shadow-2xl max-w-4xl w-full overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-ink-200">
               <h3 className="text-strong text-ink-900 flex items-center gap-2">AI 产品效果图 <span className="text-meta font-mono text-brand-600 border border-brand-200 bg-brand-50 px-1.5 py-0.5 rounded-eng">Nano Banana</span></h3>
               <button onClick={() => !isRendering && setShowRenderModal(false)} className="text-ink-400 hover:text-ink-700 text-lg" disabled={isRendering}>✕</button>
@@ -893,7 +902,12 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                 </div>
               ) : renderImg ? (
                 <div className="space-y-3">
-                  <img src={renderImg} alt="产品效果图" className="w-full rounded-eng-lg border border-ink-200" />
+                  <img
+                    src={renderImg}
+                    alt="产品效果图"
+                    onClick={() => setImgZoomed(true)}
+                    className="w-full max-h-[65vh] object-contain rounded-eng-lg border border-ink-200 bg-ink-50 cursor-zoom-in"
+                  />
                   <div>
                     <label className="text-meta text-ink-500 block mb-1">想改进哪里?(可选,填写后点"重新生成")</label>
                     <input
