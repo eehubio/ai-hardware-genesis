@@ -6,6 +6,7 @@ interface RightPanelProps {
   state: ProjectState;
   setState: React.Dispatch<React.SetStateAction<ProjectState>>;
   onModeChange: (m: WorkflowMode) => void;
+  onCollapse?: () => void;
 }
 
 const getStatusColor = (status: PipelineStatus) => {
@@ -18,7 +19,7 @@ const getStatusColor = (status: PipelineStatus) => {
   }
 };
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange, onCollapse }) => {
   const [activeTab, setActiveTab] = useState<'props' | 'pipeline' | 'bom'>('props');
 
   const selectedComp = state.components.find(c => c.instanceId === state.selectedComponentId);
@@ -37,7 +38,16 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }
 
   return (
     <div className="w-[280px] bg-white border-l border-slate-200 flex flex-col shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.02)] z-20">
-      <div className="flex border-b border-slate-100">
+      <div className="flex border-b border-slate-100 items-stretch">
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="px-3 text-slate-300 hover:text-slate-600 transition-colors text-sm"
+            title="收起面板"
+          >
+            ▶
+          </button>
+        )}
         {[
           { id: 'props', label: '项目概览' },
           { id: 'bom', label: 'BOM' }
@@ -45,7 +55,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }
           <button 
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 py-3 text-[11px] font-bold transition-colors ${activeTab === tab.id ? 'text-green-600 border-b-2 border-green-600' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex-1 py-3 text-meta font-semibold transition-colors ${activeTab === tab.id ? 'text-brand-600 border-b-2 border-brand-600' : 'text-ink-400 hover:text-ink-600'}`}
           >
             {tab.label}
           </button>
@@ -56,25 +66,25 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }
         {activeTab === 'props' && (
           <div className="space-y-6">
             {selectedComp && (
-              <div className="bg-indigo-50/50 border border-indigo-150 p-4 rounded-3xl space-y-4 animate-in fade-in slide-in-from-right-4">
+              <div className="bg-brand-50/60 border border-brand-200 p-4 rounded-eng-lg space-y-4 animate-in fade-in slide-in-from-right-4">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-550 animate-pulse" />
-                    Vercel DB Component Inspector
+                  <h4 className="text-meta font-semibold text-brand-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
+                    组件检查器
                   </h4>
-                  <span className="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase">
-                    API Active
+                  <span className="text-meta bg-brand-100 text-brand-700 px-2 py-0.5 rounded-eng font-medium">
+                    云端库
                   </span>
                 </div>
 
                 <div className="flex gap-3 items-center">
-                  <div className="w-14 h-14 bg-white rounded-2xl border border-indigo-100/80 p-1 flex items-center justify-center shrink-0">
+                  <div className="w-14 h-14 bg-white rounded-eng border border-ink-200 p-1 flex items-center justify-center shrink-0">
                     <img src={selectedComp.thumb} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-black text-slate-800 truncate uppercase">{selectedComp.name}</div>
-                    <div className="text-[9px] text-slate-400 font-mono mt-0.5">SKU: {selectedComp.sku || 'CUSTOM-PCBA'}</div>
-                    <div className="text-[9px] text-indigo-600 font-black mt-0.5">¥{selectedComp.price} (组件成本)</div>
+                    <div className="text-strong text-ink-800 truncate">{selectedComp.name}</div>
+                    <div className="text-meta text-ink-400 font-mono mt-0.5">SKU: {selectedComp.sku || 'CUSTOM-PCBA'}</div>
+                    <div className="text-meta text-brand-600 font-semibold mt-0.5">¥{selectedComp.price} (组件成本)</div>
                   </div>
                 </div>
 
@@ -83,26 +93,78 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }
               </div>
             )}
 
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-               <div className="flex justify-between items-start mb-4">
+            <div className="bg-ink-50 rounded-eng-lg p-4 border border-ink-200">
+               <div className="flex justify-between items-start">
                  <div>
-                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Project Status</div>
+                   <div className="text-meta font-medium text-ink-400 uppercase tracking-wide mb-1">项目状态</div>
                    <div className="flex items-center gap-2">
-                     <span className={`w-2.5 h-2.5 rounded-full ${getStatusColor(state.status)} shadow-sm`} />
-                     <span className="text-sm font-bold text-slate-700 capitalize">{state.status}</span>
+                     <span className={`w-2.5 h-2.5 rounded-full ${getStatusColor(state.status)}`} />
+                     <span className="text-strong text-ink-700 capitalize">{state.status}</span>
                    </div>
                  </div>
-                 <div className="text-[10px] bg-white px-2 py-1 rounded-lg border border-slate-100 font-mono text-slate-400">
+                 <div className="text-meta bg-white px-2 py-1 rounded-eng border border-ink-200 font-mono text-ink-400">
                    v1.0.0
                  </div>
                </div>
             </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold text-slate-800">设计合规性建议</h4>
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[11px] text-blue-700 leading-relaxed">
-                <span className="font-bold">AI 分析:</span> 检测到您使用了 I2C 模块。在生成的原理图中，我们将自动添加 4.7kΩ 上拉电阻到 SDA/SCL 总线。
-              </div>
+            <div className="space-y-3">
+              <h4 className="text-strong text-ink-800">设计合规性建议</h4>
+              {(() => {
+                const comps = state.components;
+                if (comps.length === 0) {
+                  return (
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[11px] text-slate-400 leading-relaxed">
+                      添加组件后，这里会显示针对你方案的实时设计检查。
+                    </div>
+                  );
+                }
+                const tips: { type: string; text: string }[] = [];
+                // I2C 上拉
+                const hasI2C = comps.some(c => c.electrical?.protocols?.includes('I2C'));
+                if (hasI2C) {
+                  tips.push({ type: 'info', text: '检测到 I2C 模块，原理图将自动为 SDA/SCL 添加 4.7kΩ 上拉电阻。' });
+                }
+                // 缺少 MCU
+                const hasMcu = comps.some(c => c.type === 'mcu');
+                if (!hasMcu) {
+                  tips.push({ type: 'warn', text: '当前方案没有主控(MCU)，建议先添加一个 XIAO 主控。' });
+                }
+                // 多个 MCU
+                const mcuCount = comps.filter(c => c.type === 'mcu').length;
+                if (mcuCount > 1) {
+                  tips.push({ type: 'warn', text: `检测到 ${mcuCount} 个主控，通常一个系统只需一个主控。` });
+                }
+                // 总电流估算
+                const totalCurrent = comps.reduce((s, c) => s + (c.electrical?.currentDraw || 0), 0);
+                if (totalCurrent > 0) {
+                  const rec = totalCurrent < 500 ? '500mA' : totalCurrent < 1000 ? '1A' : '2A';
+                  tips.push({ type: 'info', text: `预估峰值电流约 ${totalCurrent}mA，建议电源供电能力 ≥ ${rec}。` });
+                }
+                // 高压继电器
+                if (comps.some(c => c.id === 'relay')) {
+                  tips.push({ type: 'warn', text: '方案含继电器，若驱动市电负载请注意强弱电隔离与安全间距。' });
+                }
+                if (tips.length === 0) {
+                  tips.push({ type: 'info', text: '基础检查通过，未发现明显问题。' });
+                }
+                return (
+                  <div className="space-y-2">
+                    {tips.map((t, i) => (
+                      <div
+                        key={i}
+                        className={`p-2.5 rounded-xl text-[11px] leading-relaxed border ${
+                          t.type === 'warn'
+                            ? 'bg-amber-50 border-amber-100 text-amber-700'
+                            : 'bg-blue-50 border-blue-100 text-blue-700'
+                        }`}
+                      >
+                        <span className="font-bold">{t.type === 'warn' ? '⚠ 提示:' : 'AI 分析:'}</span> {t.text}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

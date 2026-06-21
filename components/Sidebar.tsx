@@ -338,7 +338,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveTab('library')}
           className={`flex-1 py-3 text-[11px] font-black uppercase tracking-wider text-center border-b-2 transition-all flex items-center justify-center gap-1.5 min-h-[46px] ${
             activeTab === 'library'
-              ? 'border-indigo-600 text-indigo-700 bg-white'
+              ? 'border-brand-600 text-brand-700 bg-white'
               : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50/60'
           }`}
         >
@@ -380,17 +380,17 @@ const Sidebar: React.FC<SidebarProps> = ({
             </h3>
 
         {/* Database integration banner */}
-        <div className="p-3 mb-4 bg-indigo-50/80 border border-indigo-100 rounded-[20px] flex items-center justify-between shadow-sm">
+        <div className="p-3 mb-4 bg-brand-50 border border-brand-200 rounded-eng-lg flex items-center justify-between shadow-sm">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-indigo-800 tracking-tight flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-pulse" />
+            <span className="text-meta font-semibold text-brand-800 tracking-tight flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
               云端模块平台
             </span>
             <span className="text-[8px] text-slate-400 font-mono mt-0.5">libSQL / Turso · Live API</span>
           </div>
           <button
             onClick={() => window.open('https://ai-hardware-genesis-platform.vercel.app/admin', '_blank')}
-            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase transition-all shadow-md hover:scale-[1.03]"
+            className="px-2.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-eng text-meta font-semibold uppercase transition-all shadow-md hover:scale-[1.03]"
           >
             云库管理
           </button>
@@ -401,7 +401,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={cat}
               onClick={() => setFilter(cat)}
-              className={`px-2.5 py-1.5 rounded-[12px] text-[10px] font-black transition-all uppercase ${filter === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'}`}
+              className={`px-2.5 py-1.5 rounded-eng text-meta font-semibold transition-all uppercase ${filter === cat ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'}`}
             >
               {cat === 'all' ? '全部' : cat}
             </button>

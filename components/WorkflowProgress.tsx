@@ -20,9 +20,9 @@ const WorkflowProgress: React.FC<WorkflowProgressProps> = ({ steps, currentStep,
           <React.Fragment key={idx}>
             <button 
               onClick={() => setStep(idx)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all group ${currentStep === idx ? 'bg-green-50 text-green-700' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all group ${currentStep === idx ? 'bg-brand-50 text-brand-700' : 'text-slate-400 hover:text-slate-600'}`}
             >
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep === idx ? 'bg-green-600 text-white shadow-sm' : 'bg-slate-100'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${currentStep === idx ? 'bg-brand-600 text-white' : 'bg-slate-100'}`}>
                 {idx + 1}
               </span>
               <span className="text-sm font-medium">{step.label}</span>
