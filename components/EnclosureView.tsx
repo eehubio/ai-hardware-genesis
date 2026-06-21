@@ -766,7 +766,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   );
 
   return (
-    <div className={`min-h-full transition-all duration-700 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-slate-50 p-8'}`}>
+    <div className={`min-h-full transition-all duration-700 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-slate-50 p-5'}`}>
       {!isFullscreen && (
         <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between">
           <div>

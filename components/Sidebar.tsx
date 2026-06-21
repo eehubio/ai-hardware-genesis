@@ -330,7 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-[360px] bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-[10px_0_30px_rgba(0,0,0,0.03)] z-30 transition-all duration-300">
+    <aside className="w-[300px] bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-[10px_0_30px_rgba(0,0,0,0.03)] z-30 transition-all duration-300">
       {/* Tabs */}
       <div className="flex border-b border-slate-200 bg-slate-50/30">
         <button

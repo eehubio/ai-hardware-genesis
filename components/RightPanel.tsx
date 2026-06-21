@@ -36,7 +36,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange }
   };
 
   return (
-    <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.02)] z-20">
+    <div className="w-[280px] bg-white border-l border-slate-200 flex flex-col shrink-0 shadow-[-4px_0_15px_rgba(0,0,0,0.02)] z-20">
       <div className="flex border-b border-slate-100">
         {[
           { id: 'props', label: '项目概览' },

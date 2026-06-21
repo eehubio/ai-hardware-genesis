@@ -286,7 +286,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
             </div>
             
             {/* Modal Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-8 md:p-16 scrollbar-thin scrollbar-thumb-slate-200 bg-white">
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 scrollbar-thin scrollbar-thumb-slate-200 bg-white">
                <div className="markdown-body text-slate-800 text-sm md:text-base leading-loose max-w-4xl mx-auto pb-10">
                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {zoomedMessage}
