@@ -28,6 +28,10 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   // 新流程:整机概念图基于模块照片 + 形态风格
   const [formStyle, setFormStyle] = useState<string>('desktop');
   const [userSketch, setUserSketch] = useState<string | null>(null); // 用户上传的草图(data URI)
+  // 第四阶段:衍生视图(多视角/爆炸图/内部布局)
+  const [derivedViews, setDerivedViews] = useState<Record<string, string>>({}); // viewKey -> image
+  const [derivedLoading, setDerivedLoading] = useState<string | null>(null); // 正在生成的 viewKey
+  const [zoomedDerived, setZoomedDerived] = useState<string | null>(null);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -123,10 +127,40 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     const result = await generateProductRender(prompt, undefined, hasRefs ? refImages : undefined);
     if (result.image) {
       setRenderImg(result.image);
+      setDerivedViews({}); // 新主图 → 清空旧衍生视图
     } else {
       setRenderError(result.error || '生成失败,请重试。');
     }
     setIsRendering(false);
+  };
+
+  // 第四阶段:衍生视图定义。每个都以当前整机概念图为参考,换 prompt 生成。
+  const DERIVED_VIEWS: Record<string, { label: string; prompt: string; useThumbs?: boolean }> = {
+    back: { label: '背面', prompt: 'Render the SAME product from the BACK view, keeping identical shape, material, color and proportions. Show rear ports and details plausibly. Studio lighting, neutral background, no text watermark.' },
+    side: { label: '侧面', prompt: 'Render the SAME product from a SIDE profile view, keeping identical shape, material, color and proportions. Show the thickness and side ports. Studio lighting, neutral background, no text watermark.' },
+    top: { label: '俯视', prompt: 'Render the SAME product from a TOP-DOWN view, keeping identical shape, material, color and proportions. Studio lighting, neutral background, no text watermark.' },
+    handheld: { label: '手持', prompt: 'Render the SAME product held in a human hand to show scale, keeping identical shape, material, color and proportions. Lifestyle lighting, soft background, no text watermark.' },
+    explosion: { label: '爆炸图', useThumbs: true, prompt: 'Create an EXPLODED assembly view of the SAME product: separate the top lid, front panel, the internal modules (screen, knob, PCB, battery, speaker if present) and bottom shell, stacked vertically along the assembly axis with small gaps, keeping each part consistent with the product. Clean technical illustration style, neutral background, no dimension numbers, no text watermark.' },
+    internal: { label: '内部布局', useThumbs: true, prompt: 'Render the SAME product with the top lid removed (top-down), showing the internal modules placed inside the enclosure: where the screen, knob, PCB, battery and connectors sit. Concept cutaway illustration, neutral background, no text watermark.' },
+  };
+
+  const generateDerivedView = async (viewKey: string) => {
+    if (!renderImg) return;
+    const def = DERIVED_VIEWS[viewKey];
+    if (!def) return;
+    setDerivedLoading(viewKey);
+
+    const comps = state.components || [];
+    const moduleThumbs: string[] = comps.map((c: any) => c.thumb).filter((t: string) => t && typeof t === 'string');
+    // 参考图:当前整机图(主)+(爆炸/内部视图额外带模块照片帮助还原内部)
+    const refImages: string[] = [renderImg];
+    if (def.useThumbs) refImages.push(...moduleThumbs.slice(0, 6));
+
+    const result = await generateProductRender(def.prompt, undefined, refImages);
+    if (result.image) {
+      setDerivedViews(prev => ({ ...prev, [viewKey]: result.image! }));
+    }
+    setDerivedLoading(null);
   };
 
   const handleAiAction = async (e: React.FormEvent) => {
@@ -849,6 +883,14 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     <div className={`min-h-full transition-all duration-500 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-ink-50 p-5'}`}>
       {/* 产品效果图弹窗 */}
       {/* 效果图全屏放大 */}
+      {/* 衍生视图全屏放大 */}
+      {zoomedDerived && (
+        <div className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setZoomedDerived(null)}>
+          <img src={zoomedDerived} alt="衍生视图(放大)" className="max-w-full max-h-full object-contain" />
+          <button onClick={() => setZoomedDerived(null)} className="absolute top-5 right-6 text-white/80 hover:text-white text-3xl">✕</button>
+        </div>
+      )}
+
       {imgZoomed && renderImg && (
         <div className="fixed inset-0 z-[300] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setImgZoomed(false)}>
           <img src={renderImg} alt="产品效果图(放大)" className="max-w-full max-h-full object-contain" />
@@ -949,6 +991,44 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                     <button onClick={() => { setRenderImg(null); setRefinePrompt(''); }} className="px-4 py-2 bg-white border border-ink-200 text-ink-600 rounded-eng text-body font-semibold hover:bg-ink-50">换形态</button>
                   </div>
                   <p className="text-meta text-ink-400">效果图由 AI 根据模块照片与你的改进要求生成,仅供概念展示,非最终产品外观。</p>
+
+                  {/* 第四阶段:衍生视图(多视角 / 爆炸图 / 内部布局) */}
+                  <div className="pt-3 border-t border-ink-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-body font-semibold text-ink-800">衍生视图</div>
+                      <div className="text-meta text-ink-400">基于上图生成 · 概念展示,非工程图</div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {Object.entries(DERIVED_VIEWS).map(([key, def]) => (
+                        <button
+                          key={key}
+                          onClick={() => generateDerivedView(key)}
+                          disabled={!!derivedLoading}
+                          className={`px-3 py-1.5 rounded-eng border text-meta font-semibold transition-colors disabled:opacity-50 ${derivedViews[key] ? 'bg-brand-50 text-brand-700 border-brand-300' : 'bg-white text-ink-600 border-ink-200 hover:border-brand-300'}`}
+                        >
+                          {derivedLoading === key ? '生成中…' : (derivedViews[key] ? `${def.label} ↻` : def.label)}
+                        </button>
+                      ))}
+                    </div>
+                    {/* 已生成的衍生视图缩略图 */}
+                    {Object.keys(derivedViews).length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {Object.entries(derivedViews).map(([key, img]) => (
+                          <div key={key} className="relative group">
+                            <img
+                              src={img}
+                              alt={DERIVED_VIEWS[key]?.label}
+                              onClick={() => setZoomedDerived(img)}
+                              className="w-full aspect-square object-cover rounded-eng border border-ink-200 bg-ink-50 cursor-zoom-in"
+                            />
+                            <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-meta rounded">{DERIVED_VIEWS[key]?.label}</div>
+                            <a href={img} download={`${key}.png`} onClick={(e) => e.stopPropagation()}
+                              className="absolute top-1 right-1 px-1.5 py-0.5 bg-white/90 text-ink-700 text-meta rounded opacity-0 group-hover:opacity-100 transition-opacity">下载</a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
