@@ -25,6 +25,9 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   const [showRenderModal, setShowRenderModal] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState('');
   const [imgZoomed, setImgZoomed] = useState(false);
+  // 新流程:整机概念图基于模块照片 + 形态风格
+  const [formStyle, setFormStyle] = useState<string>('desktop');
+  const [userSketch, setUserSketch] = useState<string | null>(null); // 用户上传的草图(data URI)
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -58,7 +61,17 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   const shellW = params.width;
   const shellH = params.height;
 
-  // 根据当前方案 + 外壳参数,自动拼出工业设计 prompt 并生成效果图
+  // 形态风格选项(来自工业设计文档:常见产品形态)
+  const FORM_STYLES: Record<string, { label: string; en: string }> = {
+    desktop: { label: '桌面型', en: 'a desktop device sitting on a table, slightly angled top panel' },
+    portable: { label: '便携型', en: 'a compact handheld portable device, rounded pocketable form' },
+    wall: { label: '挂墙型', en: 'a wall-mounted device, flat slim profile with rear mount' },
+    retro: { label: '复古风', en: 'a retro vintage electronics style, warm tones, classic knobs and grille' },
+    minimal: { label: '极简消费电子', en: 'a minimal modern consumer-electronics style, seamless monolithic body, few buttons' },
+    transparent: { label: '透明教学版', en: 'an educational kit with a clear transparent enclosure revealing the internal modules' },
+  };
+
+  // 新流程:基于「方案中的模块照片」+「形态风格」生成整机概念图
   const handleGenerateRender = async () => {
     setIsRendering(true);
     setRenderError(null);
@@ -68,84 +81,46 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     const hasOLED = comps.some((c: any) => /oled|lcd|display|屏/i.test(c.id + (c.name || '')));
     const hasKnob = comps.some((c: any) => /encoder|rotary|旋钮/i.test(c.id + (c.name || '')));
     const hasButton = comps.some((c: any) => /button|switch|按钮|key/i.test(c.id + (c.name || '')));
-    const moduleNames = comps.filter((c: any) => c.type !== 'mcu').map((c: any) => c.name || c.id);
+    const moduleNames = comps.map((c: any) => c.name || c.id);
+    const modList = moduleNames.length > 0 ? moduleNames.join(', ') : 'sensor modules';
 
     const materialDesc = params.process === 'CNC' ? 'matte black anodized CNC aluminum' :
                          params.process === 'INJECTION' ? 'matte dark plastic' : 'matte 3D-printed';
 
     const features: string[] = [];
-    if (hasOLED) features.push('a small rectangular OLED screen flush-mounted on the top face');
-    if (hasKnob) features.push('one metal rotary knob');
-    if (hasButton) features.push('a few tactile buttons');
-    features.push('a USB-C port on one side');
-
-    // 列出方案中真实模块,让不同方案产出不同外观
-    const modList = moduleNames.length > 0 ? moduleNames.join(', ') : 'sensor modules';
+    if (hasOLED) features.push('a screen on the front/top face');
+    if (hasKnob) features.push('a rotary knob');
+    if (hasButton) features.push('a few buttons');
+    features.push('a USB-C port');
 
     const appHint = (state as any).projectName || (state as any).intent || 'compact smart device';
-
-    // 用户在「重新生成」时输入的改进要求
+    const style = FORM_STYLES[formStyle] || FORM_STYLES.desktop;
     const userRefine = refinePrompt.trim();
-
-    // 截取当前 3D 画面作为参考图(图生图,保证形态一致)
-    // A+C:截图前临时把外壳半透明/隐藏 + 抬高视角,让模块布局露出来
-    let refImage: string | null = null;
-    try {
-      const renderer = rendererRef.current;
-      const scene = sceneRef.current;
-      const camera = cameraRef.current;
-      if (renderer && scene && camera) {
-        // 1) 暂存外壳/盖子的可见性与不透明度,临时让它们半透明
-        const saved: { mesh: THREE.Mesh; opacity: number; transparent: boolean }[] = [];
-        scene.traverse((obj: any) => {
-          if (obj.isMesh && (obj.name === 'shell' || obj.name === 'lid')) {
-            const mat = obj.material;
-            saved.push({ mesh: obj, opacity: mat.opacity, transparent: mat.transparent });
-            mat.transparent = true;
-            mat.opacity = 0.12; // 半透明,露出内部模块
-            mat.needsUpdate = true;
-          }
-        });
-
-        // 2) 暂存相机位置,临时抬高视角(更俯视,看清顶面布局)
-        const savedPos = camera.position.clone();
-        const dist = savedPos.length();
-        camera.position.set(dist * 0.45, dist * 0.95, dist * 0.55);
-        camera.lookAt(0, 0, 0);
-
-        // 3) 渲染并截图
-        renderer.render(scene, camera);
-        refImage = renderer.domElement.toDataURL('image/png');
-
-        // 4) 全部恢复
-        camera.position.copy(savedPos);
-        camera.lookAt(0, 0, 0);
-        if (controlsRef.current) controlsRef.current.update();
-        saved.forEach(s => {
-          (s.mesh.material as any).opacity = s.opacity;
-          (s.mesh.material as any).transparent = s.transparent;
-          (s.mesh.material as any).needsUpdate = true;
-        });
-        renderer.render(scene, camera);
-      }
-    } catch (err) {
-      console.warn('canvas capture failed, fallback to text-only', err);
-    }
-
     const refineClause = userRefine ? ` IMPORTANT user adjustment request: ${userRefine}.` : '';
 
-    const prompt = refImage
-      ? `Use this reference image as the layout guide. It shows the internal module placement (screen, knob, sensors, ports) of a hardware device with a semi-transparent enclosure. ` +
-        `Render a photorealistic professional product shot of the FINISHED ASSEMBLED product (solid opaque enclosure, lid closed), keeping the SAME overall box shape, proportions, rounded corners, and the SAME top-face layout of components as shown. ` +
-        `Material: ${materialDesc}, clean seamless finish (NO visible screws, NO exposed PCB, NO open windows, NO dimension annotations or text labels). ` +
-        `On-board modules to represent on the surface (${modList}): ${features.join(', ')}. ` +
-        `A ${appHint}. Studio lighting, soft neutral background, 3/4 angle, high detail, premium consumer electronics aesthetic. No text, no watermark, no measurement lines.${refineClause}`
-      : `Professional industrial design product render, photorealistic, studio lighting, soft neutral background, 3/4 top-down angle. ` +
-        `A compact ${appHint} electronic device with these modules: ${modList}. ` +
-        `${materialDesc} seamless enclosure approximately ${Math.round(shellW)}×${Math.round(shellH)}×${Math.round(params.depth)}mm with ${params.radius}mm rounded corners. ` +
-        `Features: ${features.join(', ')}. Clean premium aesthetic, NO screws, NO exposed PCB, NO dimension labels, no text watermark.${refineClause}`;
+    // 收集模块照片(thumb)作为参考图 —— 这是新流程的核心:让 AI"看到"真实模块
+    const moduleThumbs: string[] = comps
+      .map((c: any) => c.thumb)
+      .filter((t: string) => t && typeof t === 'string');
 
-    const result = await generateProductRender(prompt, refImage || undefined);
+    // 若用户上传了草图,一并作为参考(融合)
+    const refImages: string[] = [];
+    if (userSketch) refImages.push(userSketch);
+    refImages.push(...moduleThumbs);
+
+    const hasRefs = refImages.length > 0;
+
+    const prompt = hasRefs
+      ? `You are an industrial designer. The reference images are the actual electronic modules (and optionally a hand sketch) that must be housed inside ONE finished product. ` +
+        `Design and render a photorealistic professional product concept that INTEGRATES these modules into a single cohesive enclosure: ${style.en}. ` +
+        `The product is ${appHint}, containing: ${modList}. ` +
+        `Surface should expose what users interact with (${features.join(', ')}) while hiding the bare PCBs inside the housing. ` +
+        `Enclosure material: ${materialDesc}. Studio lighting, soft neutral background, 3/4 angle, high detail, premium finish. ` +
+        `NO exposed bare PCB, NO loose wires, NO dimension labels, no text watermark. Make it look like a real shippable product.${refineClause}`
+      : `Professional industrial design product render of ${appHint}: ${style.en}. Contains ${modList}. ` +
+        `${materialDesc} enclosure, features: ${features.join(', ')}. Studio lighting, premium consumer-electronics aesthetic, no watermark.${refineClause}`;
+
+    const result = await generateProductRender(prompt, undefined, hasRefs ? refImages : undefined);
     if (result.image) {
       setRenderImg(result.image);
     } else {
@@ -892,7 +867,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
               {isRendering ? (
                 <div className="aspect-[4/3] flex flex-col items-center justify-center gap-3 text-ink-400">
                   <div className="w-10 h-10 border-3 border-brand-200 border-t-brand-600 rounded-full animate-spin"></div>
-                  <div className="text-body">正在根据当前外壳与模块生成效果图…</div>
+                  <div className="text-body">正在根据模块照片生成整机概念图…</div>
                   <div className="text-meta">约 5-15 秒</div>
                 </div>
               ) : renderError ? (
@@ -900,7 +875,56 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                   <div className="text-body text-red-500">{renderError}</div>
                   <button onClick={handleGenerateRender} className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">重试</button>
                 </div>
-              ) : renderImg ? (
+              ) : !renderImg ? (
+                /* 设置面板:选形态风格 + 可选上传草图 → 生成 */
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-body font-semibold text-ink-800 mb-1">选择产品形态</div>
+                    <div className="text-meta text-ink-400 mb-2">基于方案中的 {(state.components || []).length} 个模块照片生成整机概念图</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {Object.entries(FORM_STYLES).map(([key, s]) => (
+                        <button
+                          key={key}
+                          onClick={() => setFormStyle(key)}
+                          className={`px-3 py-2.5 rounded-eng border text-body transition-colors ${formStyle === key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-ink-700 border-ink-200 hover:border-brand-300'}`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-body font-semibold text-ink-800 mb-1">参考草图(可选)</div>
+                    <div className="text-meta text-ink-400 mb-2">上传手绘草图,AI 会结合草图与模块照片生成</div>
+                    {userSketch ? (
+                      <div className="flex items-center gap-3">
+                        <img src={userSketch} alt="草图" className="w-20 h-20 object-contain rounded-eng border border-ink-200 bg-ink-50" />
+                        <button onClick={() => setUserSketch(null)} className="text-meta text-red-500 hover:text-red-600">移除草图</button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-ink-300 rounded-eng text-body text-ink-500 hover:border-brand-400 hover:text-brand-600 cursor-pointer transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                        点击上传草图
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setUserSketch(reader.result as string);
+                          reader.readAsDataURL(f);
+                        }} />
+                      </label>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleGenerateRender}
+                    className="w-full px-4 py-3 bg-brand-600 text-white rounded-eng-lg text-body font-semibold hover:bg-brand-700 transition-colors"
+                  >
+                    生成整机概念图
+                  </button>
+                </div>
+              ) : (
                 <div className="space-y-3">
                   <img
                     src={renderImg}
@@ -922,10 +946,11 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                   <div className="flex gap-2">
                     <a href={renderImg} download="product-render.png" className="flex-1 text-center px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">下载图片</a>
                     <button onClick={handleGenerateRender} className="px-4 py-2 bg-white border border-brand-300 text-brand-700 rounded-eng text-body font-semibold hover:bg-brand-50">重新生成</button>
+                    <button onClick={() => { setRenderImg(null); setRefinePrompt(''); }} className="px-4 py-2 bg-white border border-ink-200 text-ink-600 rounded-eng text-body font-semibold hover:bg-ink-50">换形态</button>
                   </div>
-                  <p className="text-meta text-ink-400">效果图由 AI 根据外壳参数、模块清单与你的改进要求生成,仅供概念展示,非最终产品外观。</p>
+                  <p className="text-meta text-ink-400">效果图由 AI 根据模块照片与你的改进要求生成,仅供概念展示,非最终产品外观。</p>
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         </div>
@@ -941,7 +966,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
             <button
-              onClick={handleGenerateRender}
+              onClick={() => { setShowRenderModal(true); }}
               className="px-4 py-2.5 bg-white border border-brand-300 text-brand-700 rounded-eng-lg text-body font-semibold hover:bg-brand-50 transition-colors flex items-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>

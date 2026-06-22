@@ -228,13 +228,17 @@ export const generatePCBlayout = async (state: ProjectState) => {
   }
 };
 
-// 生成产品工业设计效果图(Nano Banana),可选参考图(图生图)
-export const generateProductRender = async (prompt: string, refImage?: string): Promise<{ image?: string; error?: string }> => {
+// 生成产品工业设计效果图(Nano Banana),可选参考图(图生图)/ 多参考图(模块照片融合)
+export const generateProductRender = async (
+  prompt: string,
+  refImage?: string,
+  refImages?: string[]
+): Promise<{ image?: string; error?: string }> => {
   try {
     const res = await fetch("/api/render-image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, refImage })
+      body: JSON.stringify({ prompt, refImage, refImages })
     });
     const data = await res.json();
     if (!res.ok) return { error: data?.error || `服务状态 ${res.status}` };
