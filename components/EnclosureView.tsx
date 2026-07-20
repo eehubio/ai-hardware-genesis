@@ -213,19 +213,44 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     }
   };
 
+  // B1:模块尺寸来自数据库真实数据(physical.dimensions > geometry.outline(KiCad) > 默认),
+  // 每个模块分配识别色(丝印框着色 + 底部图例对应)。STEP 真实模型属 B2,当前为包围盒近似。
+  const MODULE_COLORS = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0xec4899, 0x14b8a6, 0xf97316];
   const mappedComponents = useMemo(() => {
-    return state.components.map(comp => {
-      const isMcu = comp.type === 'mcu';
-      const cw = isMcu ? 21 : 16;
-      const ch = isMcu ? 20 : 16;
-      // Convert layout pixel positions (based on FOOTPRINT_SCALE = 5) to millimeters (1mm = 5px)
+    const clampN = (v: any, lo: number, hi: number, dflt: number) => {
+      const n = typeof v === 'number' && isFinite(v) ? v : NaN;
+      return isNaN(n) ? dflt : Math.max(lo, Math.min(hi, n));
+    };
+    return state.components.map((comp, idx) => {
+      const isMcu = comp.type === 'mcu' || comp.type === 'processor';
+      const dims = comp.physical?.dimensions as any;
+      const outline = (comp as any).geometry?.outline;
+      const cw = clampN(dims?.width ?? outline?.width, 6, 120, isMcu ? 21 : 20);
+      const ch = clampN(dims?.height ?? outline?.height, 6, 120, isMcu ? 17.8 : 20);
+      const cd = clampN(dims?.depth, 2, 40, isMcu ? 4 : 8);
+      const dimSource: 'db' | 'kicad' | 'default' =
+        dims?.width != null ? 'db' : outline?.width != null ? 'kicad' : 'default';
       const rawX = (comp.pcbX !== undefined ? comp.pcbX : (comp.x || 0)) / 5;
       const rawY = (comp.pcbY !== undefined ? comp.pcbY : (comp.y || 0)) / 5;
       const posX = Math.max(cw/2, Math.min(pcbW - cw/2, rawX)) - pcbW/2;
       const posZ = Math.max(ch/2, Math.min(pcbH - ch/2, rawY)) - pcbH/2;
-      return { ...comp, posX, posZ, cw, ch, depth: isMcu ? 4 : 3 };
+      return { ...comp, posX, posZ, cw, ch, depth: cd, color: MODULE_COLORS[idx % MODULE_COLORS.length], dimSource };
     });
   }, [state.components, pcbW, pcbH]);
+
+  // 外壳自动适配:按真实模块占位 + 间隙求外框;高度按最高模块 + PCB + 铜柱 + 盖内净空
+  const autoFitShell = () => {
+    if (!mappedComponents.length) return;
+    const maxHalfW = Math.max(...mappedComponents.map(c => Math.abs(c.posX) + c.cw / 2));
+    const maxHalfH = Math.max(...mappedComponents.map(c => Math.abs(c.posZ) + c.ch / 2));
+    const maxDepth = Math.max(...mappedComponents.map(c => c.depth));
+    setParams(prev => ({
+      ...prev,
+      width: Math.max(Math.ceil(maxHalfW * 2 + 16), pcbW + 6),
+      height: Math.max(Math.ceil(maxHalfH * 2 + 16), pcbH + 6),
+      depth: Math.max(Math.ceil(maxDepth + 1.6 + 3 + 8), 22),
+    }));
+  };
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -471,7 +496,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
         // A. Draw a crisp white silkscreen visual outline on mother PCB under each module
         const outlineThickness = 0.08;
         const outlineBox = new THREE.BoxGeometry(comp.cw + 0.8, outlineThickness, comp.ch + 0.8);
-        const outlineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        const outlineMat = new THREE.MeshBasicMaterial({ color: (comp as any).color ?? 0xffffff, transparent: true, opacity: 0.95 });
         const outlineMesh = new THREE.Mesh(outlineBox, outlineMat);
         outlineMesh.position.set(comp.posX, pcbHeightScale/2 + outlineThickness/2, comp.posZ);
         pcbGroupRef.current?.add(outlineMesh);
@@ -479,7 +504,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
         // B. Module PCB substrate (typically thick fiber glass)
         const subThickness = 1.0;
         const subGeo = new THREE.BoxGeometry(comp.cw, subThickness, comp.ch);
-        const isMcu = comp.type === 'mcu';
+        const isMcu = comp.type === 'mcu' || comp.type === 'processor';
         const isDisplay = comp.type === 'display';
         const isSensor = comp.type === 'sensor';
         const isActuator = comp.type === 'actuator';
@@ -868,6 +893,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
         <div className="text-center">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">外框尺寸</div>
           <div className="text-lg font-black text-slate-800">{params.width}×{params.height} <span className="text-[10px] text-slate-400 font-mono ml-1">mm</span></div>
+          <button onClick={autoFitShell} className="mt-1 text-[9px] font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2">按模块自动适配</button>
         </div>
         {(isFullscreen || !floating) && (
           <div className="text-center animate-in fade-in duration-1000">
@@ -876,6 +902,19 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
           </div>
         )}
       </div>
+      {!floating && mappedComponents.length > 0 && (
+        <div className="w-full mt-2 flex flex-wrap gap-x-4 gap-y-1 px-2">
+          {mappedComponents.map((c: any, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 text-[10px] text-slate-500">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: '#' + c.color.toString(16).padStart(6, '0') }} />
+              <span className="font-semibold text-slate-700">{(c.name || c.id).split(' ').slice(-2).join(' ')}</span>
+              <span className="font-mono">{c.cw}×{c.ch}×{c.depth}mm</span>
+              {c.dimSource === 'default' && <span className="text-amber-500" title="数据库缺尺寸,使用默认包围盒">≈</span>}
+            </span>
+          ))}
+          <span className="text-[10px] text-slate-400 ml-auto">包围盒近似 · ≈=库内缺尺寸 · STEP 真实模型规划中</span>
+        </div>
+      )}
     </div>
   );
 
@@ -1042,7 +1081,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
             <h2 className="text-h2 text-ink-900 flex items-center gap-2.5">
                工业设计与仿真 <span className="text-brand-600 text-meta font-mono font-medium border border-brand-200 bg-brand-50 px-2 py-0.5 rounded-eng">Engine v2.5</span>
             </h2>
-            <p className="text-body text-ink-500 mt-1">物理精准度 ±0.1mm · 通过 WebGL 实时仿真外壳结构与内部干涉</p>
+            <p className="text-body text-ink-500 mt-1">推荐流程:① 生成整机概念图确定外观 → ② 下方结构布局核对模块摆放(数据库尺寸包围盒近似,非 STEP 精确模型)</p>
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
             <button
@@ -1050,7 +1089,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
               className="px-4 py-2.5 bg-white border border-brand-300 text-brand-700 rounded-eng-lg text-body font-semibold hover:bg-brand-50 transition-colors flex items-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-              <span>生成效果图</span>
+              <span>① 生成整机概念图</span>
             </button>
             <button 
               onClick={() => setState(p => ({ ...p, currentStep: 4 }))}
