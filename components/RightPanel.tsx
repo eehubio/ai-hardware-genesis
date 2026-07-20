@@ -85,7 +85,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange, 
                   <div className="min-w-0">
                     <div className="text-strong text-ink-800 truncate">{selectedComp.name}</div>
                     <div className="text-meta text-ink-400 font-mono mt-0.5">SKU: {selectedComp.sku || 'CUSTOM-PCBA'}</div>
-                    <div className="text-meta text-brand-600 font-semibold mt-0.5">¥{selectedComp.price} (组件成本)</div>
+                    <div className="text-meta text-brand-600 font-semibold mt-0.5">¥{numeric(selectedComp.price) ?? '—'} (组件成本)</div>
                   </div>
                 </div>
 
@@ -192,7 +192,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange, 
                         <div className="text-[11px] font-bold text-slate-800 truncate">{c.name}</div>
                         <div className="text-[9px] text-slate-400 font-mono">{c.sku || 'CUSTOM-PCBA'}</div>
                       </div>
-                      <div className="text-[11px] font-bold text-slate-800">¥{c.price}</div>
+                      <div className="text-[11px] font-bold text-slate-800">¥{numeric(c.price) ?? '—'}</div>
                     </div>
                   ))}
                 </div>
@@ -280,8 +280,8 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
       {p?.dimensions && (
         <div className="flex items-center gap-2 text-meta">
           <span className="text-ink-400">尺寸</span>
-          <span className="font-mono text-ink-700">{p.dimensions.width}×{p.dimensions.height}×{p.dimensions.depth}mm</span>
-          {p.weight != null && <span className="text-ink-400">· {p.weight}g</span>}
+          <span className="font-mono text-ink-700">{numeric(p.dimensions.width) ?? '?'}×{numeric(p.dimensions.height) ?? '?'}×{numeric(p.dimensions.depth) ?? '?'}mm</span>
+          {numeric(p.weight) != null && <span className="text-ink-400">· {numeric(p.weight)}g</span>}
         </div>
       )}
 
