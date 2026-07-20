@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectState } from '../types';
-import { formatValue } from '../utils/safe';
+import { formatValue, normalizePinMapping, scalarPin } from '../utils/safe';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -122,10 +122,10 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
     const isAdc = protocols.includes('ADC') || spec.includes('ADC') || name.includes('ADC');
 
     if (isI2c) {
-      return `${pinMapping['SDA'] || 'D4'} / ${pinMapping['SCL'] || 'D5'}`;
+      return `${scalarPin(pinMapping, 'SDA', 'D4')} / ${scalarPin(pinMapping, 'SCL', 'D5')}`;
     }
     if (isUart) {
-      return `${pinMapping['TX'] || 'D7'} / ${pinMapping['RX'] || 'D6'}`;
+      return `${scalarPin(pinMapping, 'TX', 'D7')} / ${scalarPin(pinMapping, 'RX', 'D6')}`;
     }
     if (isAdc) {
       return 'A0';
@@ -247,21 +247,21 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
                         <div className="text-sm font-black text-slate-900 uppercase truncate">{p.name}</div>
                         <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-0.5">{p.spec.split('·')[0]}</div>
                         
-                        {p.electrical?.pinMapping && Object.keys(p.electrical.pinMapping).length > 0 ? (
+                        {normalizePinMapping(p.electrical?.pinMapping).length > 0 ? (
                           <div className="mt-3 bg-slate-50 p-2.5 rounded-xl border border-dashed border-slate-205">
                             <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">🔌 外设定制管脚映射 (Device Pin Out)</span>
                             <div className="flex flex-wrap gap-1.5">
-                              {Object.entries(p.electrical.pinMapping).map(([pinName, pinNum]) => {
+                              {normalizePinMapping(p.electrical?.pinMapping).map(([pinName, pinNum]) => {
                                 // Match this sensor pin to corresponding MCU pin
                                 let mcuMatchedPin = 'N/A';
                                 if (mcu) {
                                   const nameUpper = pinName.toUpperCase();
                                   if (nameUpper === 'GND') mcuMatchedPin = 'GND';
                                   else if (nameUpper === 'VCC' || nameUpper === '3V3' || nameUpper === '5V') mcuMatchedPin = '3.3V/5V';
-                                  else if (nameUpper === 'SDA') mcuMatchedPin = mcu.electrical?.pinMapping?.['SDA'] || 'D4';
-                                  else if (nameUpper === 'SCL') mcuMatchedPin = mcu.electrical?.pinMapping?.['SCL'] || 'D5';
-                                  else if (nameUpper === 'TX') mcuMatchedPin = mcu.electrical?.pinMapping?.['TX'] || 'D7';
-                                  else if (nameUpper === 'RX') mcuMatchedPin = mcu.electrical?.pinMapping?.['RX'] || 'D6';
+                                  else if (nameUpper === 'SDA') mcuMatchedPin = scalarPin(mcu.electrical?.pinMapping, 'SDA', 'D4');
+                                  else if (nameUpper === 'SCL') mcuMatchedPin = scalarPin(mcu.electrical?.pinMapping, 'SCL', 'D5');
+                                  else if (nameUpper === 'TX') mcuMatchedPin = scalarPin(mcu.electrical?.pinMapping, 'TX', 'D7');
+                                  else if (nameUpper === 'RX') mcuMatchedPin = scalarPin(mcu.electrical?.pinMapping, 'RX', 'D6');
                                 }
                                 return (
                                   <div key={pinName} className="bg-white border border-slate-200 py-1 px-2 rounded-lg text-[9px] font-mono flex items-center gap-1 shadow-sm">

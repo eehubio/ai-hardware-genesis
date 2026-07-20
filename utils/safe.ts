@@ -52,10 +52,21 @@ export function numeric(v: unknown): number | null {
   return null;
 }
 
-/** pinMapping 规整成 [名称, 显示值] 的安全数组(过滤空项)。 */
+/** pinMapping 规整成 [名称, 显示值] 的安全数组。
+ *  只保留标量值(string/number)的条目 —— 这些才是真正的引脚分配(如 SDA→"D4")。
+ *  对象/数组值(KiCad 导入的结构化连接器/溯源数据混入 pinMapping 时)直接跳过,
+ *  既防崩溃,也避免把 "reference/kind/…" 之类的内部结构当引脚显示出来。 */
 export function normalizePinMapping(pm: unknown): [string, string][] {
   if (!pm || typeof pm !== 'object' || Array.isArray(pm)) return [];
   return Object.entries(pm as Record<string, unknown>)
-    .map(([k, v]) => [k, formatValue(v, 24)] as [string, string])
-    .filter(([, v]) => v !== '—');
+    .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+    .map(([k, v]) => [k, String(v)] as [string, string])
+    .filter(([, v]) => v.trim() !== '');
+}
+
+/** 从 pinMapping 安全取单个引脚:仅当值为标量时返回字符串,否则返回 fallback。 */
+export function scalarPin(pm: unknown, key: string, fallback: string): string {
+  if (!pm || typeof pm !== 'object' || Array.isArray(pm)) return fallback;
+  const v = (pm as Record<string, unknown>)[key] ?? (pm as Record<string, unknown>)[key.toLowerCase()];
+  return typeof v === 'string' || typeof v === 'number' ? String(v) : fallback;
 }
