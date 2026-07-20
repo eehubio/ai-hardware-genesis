@@ -478,10 +478,10 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
       const pFp = p.isChipOnly ? p.footprint : p.moduleFootprint;
       if (!mcuFp || !pFp) return;
 
-      pinInfo.pins.forEach((pinName, pinIdx) => {
+      (pinInfo?.pins || []).forEach((pinName, pinIdx) => {
         const mcuPinName = pinInfo.mcuPins[pinIdx];
-        const mcuPin = mcuFp.pins.find(fp => fp.name === mcuPinName || (mcuPinName === 'GND' && fp.name === 'GND') || (mcuPinName === '3V3' && (fp.name === '3V3' || fp.name === 'VCC')));
-        const pPin = pFp.pins.find(fp => fp.name === pinName || (pinName === 'VCC' && (fp.name === '3V3' || fp.name === 'VCC')) || (pinName === 'GND' && fp.name === 'GND'));
+        const mcuPin = (mcuFp?.pins || []).find(fp => fp.name === mcuPinName || (mcuPinName === 'GND' && fp.name === 'GND') || (mcuPinName === '3V3' && (fp.name === '3V3' || fp.name === 'VCC')));
+        const pPin = (pFp?.pins || []).find(fp => fp.name === pinName || (pinName === 'VCC' && (fp.name === '3V3' || fp.name === 'VCC')) || (pinName === 'GND' && fp.name === 'GND'));
         if (mcuPin && pPin) {
           const from = { x: mcuPos.x + mcuPin.x * FOOTPRINT_SCALE, y: mcuPos.y + mcuPin.y * FOOTPRINT_SCALE };
           const to = { x: pPos.x + pPin.x * FOOTPRINT_SCALE, y: pPos.y + pPin.y * FOOTPRINT_SCALE };
@@ -515,7 +515,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
       >
         <div className="absolute inset-0.5 border border-[#fbbf24] opacity-20 pointer-events-none" />
         <div className="absolute -top-4 left-0 text-[7px] font-mono font-black text-green-400 uppercase tracking-tighter truncate w-full">{designator} | {comp.name.split(' ').pop()}</div>
-        {footprint.pins.map(pin => (
+        {(footprint?.pins || []).map(pin => (
           <div key={pin.id} className="absolute bg-[#ccd5de] border border-black/10" style={{ left: `${pin.x * FOOTPRINT_SCALE}px`, top: `${pin.y * FOOTPRINT_SCALE}px`, width: '3px', height: '3px', transform: 'translate(-50%, -50%)' }} />
         ))}
       </div>

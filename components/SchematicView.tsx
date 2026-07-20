@@ -126,13 +126,13 @@ const SchematicView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
         y: py,
         width: 220,
         height: 200,
-        pins: pinInfo.pins.map((name, pidx) => ({ name, side: 'left', y: 60 + pidx * 40 }))
+        pins: (pinInfo?.pins || []).map((name, pidx) => ({ name, side: 'left', y: 60 + pidx * 40 }))
       };
       blocks.push(pBlock);
 
-      pinInfo.pins.forEach((pinName, pidx) => {
+      (pinInfo?.pins || []).forEach((pinName, pidx) => {
         const mcuPinName = pinInfo.mcuPins[pidx];
-        const mcuPin = mcuBlock.pins.find(mp => mp.name === mcuPinName);
+        const mcuPin = (mcuBlock?.pins || []).find(mp => mp.name === mcuPinName);
         if (mcuPin) {
           let trunkOffset = 0; 
           if (pinName === 'GND') trunkOffset = 550 + (i * 15);
@@ -186,7 +186,7 @@ const SchematicView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                     <text x={block.width/2} y="25" textAnchor="middle" fontSize="10" fontWeight="900" fill="#0f172a" className="uppercase tracking-[0.3em] font-mono">
                       {block.name}
                     </text>
-                    {block.pins.map((pin: any, pi: number) => (
+                    {(block?.pins || []).map((pin: any, pi: number) => (
                       <g key={pi}>
                         <line x1={pin.side === 'left' ? -20 : block.width} y1={pin.y} x2={pin.side === 'left' ? 0 : block.width + 20} y2={pin.y} stroke="#0f172a" strokeWidth="3" />
                         <text x={pin.side === 'left' ? 12 : block.width - 12} y={pin.y + 4} fontSize="11" fontWeight="black" fill="#475569" textAnchor={pin.side === 'left' ? 'start' : 'end'} className="font-mono">{pin.name}</text>

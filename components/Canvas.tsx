@@ -1,6 +1,8 @@
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { WorkflowMode, ProjectState, CanvasComponent, PCBFootprint } from '../types';
+import { normalizePinMapping } from '../utils/safe';
+import ErrorBoundary from './ErrorBoundary';
 
 interface CanvasProps {
   state: ProjectState;
@@ -316,7 +318,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
             const currentX = isBeingDragged ? activeDrag!.x : (isPcb ? (comp.pcbX ?? comp.x) : comp.x);
             const currentY = isBeingDragged ? activeDrag!.y : (isPcb ? (comp.pcbY ?? comp.y) : comp.y);
             const designator = `U${comp.instanceId.split('-')[1].slice(-3)}`;
-            const isMcu = comp.type === 'mcu';
+            const isMcu = comp.type === 'mcu' || comp.type === 'processor';
             
             return (
               <div 
@@ -325,6 +327,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
                 style={{ left: `${currentX}px`, top: `${currentY}px`, position: 'absolute' }} 
                 className={`select-none ${isBeingDragged ? 'z-50 scale-105 transition-none shadow-2xl' : 'z-20'} ${comp.isSimplified ? 'min-w-max min-h-max bg-transparent' : 'w-64 bg-white border border-ink-200 rounded-eng-xl shadow-lg p-5 group cursor-grab active:cursor-grabbing hover:border-brand-400 transition-colors'}`}
               >
+                <ErrorBoundary scope="module" label={comp.name}>
                 {comp.isSimplified ? (
                   (comp.isChipOnly ? comp.footprint : comp.moduleFootprint) ? renderFootprint(comp.isChipOnly ? comp.footprint! : comp.moduleFootprint!, designator, comp.instanceId) : <div className="w-12 h-12 bg-slate-900 border-2 border-slate-400 rounded-sm flex items-center justify-center text-[9px] text-white font-mono">{designator}</div>
                 ) : (
@@ -361,15 +364,15 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
                         </div>
                       </div>
                     )}
-                    {!isMcu && comp.electrical?.pinMapping && Object.keys(comp.electrical.pinMapping).length > 0 && (
+                    {!isMcu && comp.electrical?.pinMapping && normalizePinMapping(comp.electrical.pinMapping).length > 0 && (
                       <div className="mt-4 p-3 bg-slate-50/80 rounded-xl border border-slate-200">
                         <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
                           🔌 模块管脚定义 (Pin Mapping)
                         </div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {Object.entries(comp.electrical.pinMapping).map(([pinName, pinNum]) => (
+                          {normalizePinMapping(comp.electrical.pinMapping).map(([pinName, pinVal]) => (
                             <div key={pinName} className="flex gap-1 items-center text-[9px] font-mono leading-none">
-                              <span className="bg-slate-200/60 px-1 py-0.5 rounded text-slate-700 font-bold font-sans text-[8px]">P{pinNum}</span>
+                              <span className="bg-slate-200/60 px-1 py-0.5 rounded text-slate-700 font-bold font-sans text-[8px]">{pinVal}</span>
                               <span className="text-indigo-600 truncate font-bold text-[9px]" title={pinName}>{pinName}</span>
                             </div>
                           ))}
@@ -378,6 +381,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
                     )}
                   </>
                 )}
+                </ErrorBoundary>
               </div>
             );
           })}

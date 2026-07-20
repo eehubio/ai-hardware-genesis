@@ -185,9 +185,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-220px)] bg-slate-50/30">
           {history.map((msg) => {
-            const allSuggestedIds = Array.from(new Set(
-              (msg.cards || []).flatMap(c => c.solutionComponents || [])
-            ));
+            const solutionCards = (msg.cards || []).filter(c => c.solutionComponents && c.solutionComponents.length > 0);
+            const allSuggestedIds = solutionCards.length === 1 ? [...new Set(solutionCards[0].solutionComponents!)] : [];
+            // F-02:只有"最新一条带方案的助手消息"上的按钮有效;更早的方案已过期
+            const latestSolutionMsgId = [...history].reverse().find(m => m.role === 'assistant' && (m.cards || []).some(c => c.solutionComponents?.length))?.id;
+            const isStale = msg.id !== latestSolutionMsgId;
 
             return (
               <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -272,12 +274,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                   })()}
                   
                   {msg.role === 'assistant' && allSuggestedIds.length > 0 && (
-                    <button 
-                      onClick={() => onApplySolution(allSuggestedIds)}
-                      className="w-full mt-3 mb-1 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-black hover:bg-black transition-all shadow-md flex items-center justify-center gap-2 border border-slate-700"
+                    <button
+                      onClick={() => !isStale && onApplySolution(allSuggestedIds)}
+                      disabled={isStale}
+                      className={`w-full mt-3 mb-1 py-2 rounded-lg text-[10px] font-black transition-all flex items-center justify-center gap-2 border ${isStale ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-slate-900 text-white border-slate-700 hover:bg-black shadow-md'}`}
                     >
-                      <span>🚀 应用推荐系统方案</span>
+                      <span>{isStale ? '⛔ 方案已过期(对话已更新)' : '🚀 应用推荐系统方案'}</span>
                     </button>
+                  )}
+                  {msg.role === 'assistant' && solutionCards.length > 1 && !isStale && (
+                    <div className="mt-2 text-[9px] text-slate-400 text-center">检测到 {solutionCards.length} 个备选方案,请在上方选择其一应用(不会合并)</div>
                   )}
 
                   {msg.cards && (
@@ -296,7 +302,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                           
                           {card.solutionComponents && card.solutionComponents.length > 0 && (
                             <button 
-                              onClick={() => onApplySolution(card.solutionComponents!)}
+                              onClick={() => !isStale && onApplySolution(card.solutionComponents!)} disabled={isStale}
                               className="w-full mt-1.5 py-1.5 bg-green-600 text-white rounded-md text-[9px] font-bold hover:bg-green-700 transition-all shadow-sm flex items-center justify-center gap-1"
                             >
                               <span>⚡ 应用此子方案</span>
@@ -568,9 +574,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
             {history.map((msg) => {
               // Aggregate all solution components from this message's cards
-              const allSuggestedIds = Array.from(new Set(
-                (msg.cards || []).flatMap(c => c.solutionComponents || [])
-              ));
+            const solutionCards = (msg.cards || []).filter(c => c.solutionComponents && c.solutionComponents.length > 0);
+              const allSuggestedIds = solutionCards.length === 1 ? [...new Set(solutionCards[0].solutionComponents!)] : [];
+              // F-02:只有"最新一条带方案的助手消息"上的按钮有效;更早的方案已过期
+              const latestSolutionMsgId = [...history].reverse().find(m => m.role === 'assistant' && (m.cards || []).some(c => c.solutionComponents?.length))?.id;
+              const isStale = msg.id !== latestSolutionMsgId;
 
               return (
                 <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -656,13 +664,17 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                     })()}
                     
                     {msg.role === 'assistant' && allSuggestedIds.length > 0 && (
-                      <button 
-                        onClick={() => onApplySolution(allSuggestedIds)}
-                        className="w-full mt-4 mb-2 py-3 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-black transition-all shadow-xl flex items-center justify-center gap-3 border border-slate-700"
+                      <button
+                        onClick={() => !isStale && onApplySolution(allSuggestedIds)}
+                        disabled={isStale}
+                        className={`w-full mt-4 mb-2 py-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-3 border ${isStale ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-slate-900 text-white border-slate-700 hover:bg-black shadow-xl'}`}
                       >
-                        <span className="text-lg">🚀</span>
-                        <span>应用完整系统方案 ({allSuggestedIds.length} 个组件)</span>
+                        <span className="text-lg">{isStale ? '⛔' : '🚀'}</span>
+                        <span>{isStale ? '方案已过期(对话已更新)' : `应用完整系统方案 (${allSuggestedIds.length} 个组件)`}</span>
                       </button>
+                    )}
+                    {msg.role === 'assistant' && solutionCards.length > 1 && !isStale && (
+                      <div className="mt-2 text-[10px] text-slate-400 text-center">检测到 {solutionCards.length} 个备选方案,请选择其一应用(不会合并)</div>
                     )}
 
                     {msg.cards && (
@@ -681,7 +693,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                             
                             {card.solutionComponents && card.solutionComponents.length > 0 && (
                               <button 
-                                onClick={() => onApplySolution(card.solutionComponents!)}
+                                onClick={() => !isStale && onApplySolution(card.solutionComponents!)} disabled={isStale}
                                 className="w-full mt-2 py-2 bg-green-600 text-white rounded-lg text-[10px] font-bold hover:bg-green-700 transition-all shadow-md shadow-green-100 flex items-center justify-center gap-2"
                               >
                                 <span>⚡ 应用此子方案</span>

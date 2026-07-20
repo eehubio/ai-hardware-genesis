@@ -1,4 +1,5 @@
 
+import { formatValue } from '../utils/safe';
 import React, { useState } from 'react';
 import { ProjectState, WorkflowMode, PipelineStatus, PCBFootprint } from '../types';
 
@@ -283,7 +284,7 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
             {Object.entries(pinMap).map(([pin, func]: any, i) => (
               <div key={i} className="flex justify-between text-meta font-mono py-0.5 border-b border-dotted border-ink-100 last:border-0">
                 <span className="text-ink-500">{pin}</span>
-                <span className="text-brand-600">{func}</span>
+                <span className="text-brand-600">{formatValue(func, 24)}</span>
               </div>
             ))}
           </div>

@@ -7,6 +7,7 @@ import { fetchModuleLibrary } from './services/apiService';
 import Header from './components/Header';
 import WorkflowProgress from './components/WorkflowProgress';
 import Sidebar from './components/Sidebar';
+import ErrorBoundary from './components/ErrorBoundary';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
 import AIAssistant from './components/AIAssistant';
@@ -133,23 +134,30 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const applySolution = (ids: string[]) => {
-    const mcuId = ids.find(id => state.library.find(c => c.id === id)?.type === 'mcu') || 'xiao_esp32s3';
-    const peripherals = ids.filter(id => id !== mcuId);
-    const mcuBase = state.library.find(c => c.id === mcuId);
-    if (!mcuBase) return;
-    
+    // F-03/F-09 修复:不静默补主控、不静默跳过未知 ID、processor 也算主控、给出结果摘要
+    const found: typeof state.library = [];
+    const skipped: string[] = [];
+    ids.forEach(id => {
+      const base = state.library.find(c => c.id === id);
+      if (base) found.push(base); else skipped.push(id);
+    });
+
+    const isMcuType = (t?: string) => t === 'mcu' || t === 'processor';
+    const mcus = found.filter(c => isMcuType(c.type));
+    const mcuBase = mcus[0] || null;
+    const peripherals = found.filter(c => c !== mcuBase);
+
     const newComponents: CanvasComponent[] = [];
     const mcuX = 400; const mcuY = 300;
-    newComponents.push({ ...mcuBase, instanceId: `${mcuId}-${Date.now()}`, x: mcuX, y: mcuY, pcbX: 30, pcbY: 30 });
-
+    if (mcuBase) {
+      newComponents.push({ ...mcuBase, instanceId: `${mcuBase.id}-${Date.now()}`, x: mcuX, y: mcuY, pcbX: 30, pcbY: 30 });
+    }
     const radius = 250;
-    peripherals.forEach((id, index) => {
-      const base = state.library.find(c => c.id === id);
-      if (!base) return;
-      const angle = (index / peripherals.length) * Math.PI * 2;
+    peripherals.forEach((base, index) => {
+      const angle = (index / Math.max(peripherals.length, 1)) * Math.PI * 2;
       newComponents.push({
         ...base,
-        instanceId: `${id}-${Date.now()}-${index}`,
+        instanceId: `${base.id}-${Date.now()}-${index}`,
         x: mcuX + Math.cos(angle) * radius - 96,
         y: mcuY + Math.sin(angle) * radius - 64,
         pcbX: 30 + (index + 1) * 40,
@@ -160,11 +168,21 @@ const App: React.FC = () => {
     setState(prev => ({
       ...prev,
       components: newComponents,
-      status: 'running',
-      artifacts: prev.artifacts.map(a => 
-        (a.type === 'PrototypeIR' || a.type === 'ValidationReportIR') ? { ...a, status: 'ready', lastUpdated: new Date().toLocaleTimeString() } : a
+      selectedComponentId: null as any,
+      status: newComponents.length > 0 ? 'running' : prev.status,
+      // 只把原型标 ready;校验状态不假标(F-09:应用≠已验证)
+      artifacts: prev.artifacts.map(a =>
+        a.type === 'PrototypeIR' ? { ...a, status: 'ready', lastUpdated: new Date().toLocaleTimeString() } : a
       )
     }));
+
+    // 结果摘要:加了什么、跳过了什么、主控状态 —— 如实告知,不静默
+    const parts: string[] = [];
+    parts.push(`已应用 ${newComponents.length} 个组件到画布${mcuBase ? `(主控:${mcuBase.name})` : ''}。`);
+    if (mcus.length > 1) parts.push(`⚠ 方案含 ${mcus.length} 个主控,已按第一个(${mcuBase!.name})作为中心,请确认是否需要多主控。`);
+    if (!mcuBase && newComponents.length > 0) parts.push(`⚠ 方案中没有主控。未自动添加默认主控——请在库中选择一块主控板加入,或告诉我你的主控偏好。`);
+    if (skipped.length > 0) parts.push(`⚠ 以下 ID 在当前模块库中不存在,已跳过:${skipped.join('、')}。`);
+    setAiHistory(prev => [...prev, { id: `apply-${Date.now()}`, role: 'assistant', text: parts.join('\n') }]);
   };
 
   const addComponent = (id: string, x?: number, y?: number) => {
@@ -276,7 +294,9 @@ const App: React.FC = () => {
           />
         )}
         <main className="flex-1 overflow-y-auto bg-slate-100/50 relative min-w-0">
-          {renderMainContent()}
+          <ErrorBoundary scope="app">
+            {renderMainContent()}
+          </ErrorBoundary>
           {/* 左栏收起时显示展开按钮 */}
           {leftPanelCollapsed && (
             <button

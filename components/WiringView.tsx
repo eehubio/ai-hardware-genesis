@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectState } from '../types';
+import { formatValue } from '../utils/safe';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
 const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React.SetStateAction<ProjectState>> }> = ({ state, setState }) => {
-  const mcu = state.components.find(c => c.type === 'mcu');
-  const peripherals = state.components.filter(c => c.type !== 'mcu');
+  const mcu = state.components.find(c => c.type === 'mcu' || c.type === 'processor');
+  const peripherals = state.components.filter(c => c.type !== 'mcu' && c.type !== 'processor');
   const [isScanning, setIsScanning] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -290,33 +291,62 @@ const WiringView: React.FC<{ state: ProjectState; setState: React.Dispatch<React
           </table>
         </div>
 
-        {/* 接线校验与注意事项 */}
-        <div className="mt-12 grid grid-cols-3 gap-8">
-          <div className="bg-amber-50 border border-amber-100 p-8 rounded-[40px] space-y-4">
-            <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500" /> 电平匹配校验
-            </h4>
-            <p className="text-xs text-amber-900/70 font-medium leading-relaxed">
-              检测到系统运行在 3.3V 逻辑电平。所有外设模块均支持 3.3V 输入，无需电平转换芯片。
-            </p>
-          </div>
-          <div className="bg-blue-50 border border-blue-100 p-8 rounded-[40px] space-y-4">
-            <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-500" /> I2C 地址冲突检查
-            </h4>
-            <p className="text-xs text-blue-900/70 font-medium leading-relaxed">
-              当前总线上挂载了 {peripherals.filter(p => p.spec.includes('I2C')).length} 个 I2C 设备。已确认地址无冲突（0x38, 0x76）。
-            </p>
-          </div>
-          <div className="bg-green-50 border border-green-100 p-8 rounded-[40px] space-y-4">
-            <h4 className="text-[10px] font-black text-green-600 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500" /> 功耗余量分析
-            </h4>
-            <p className="text-xs text-green-900/70 font-medium leading-relaxed">
-              预估峰值电流 120mA。主控板 LDO 最大支持 500mA，供电余量充足。
-            </p>
-          </div>
-        </div>
+        {/* 接线校验与注意事项 —— 基于当前模块真实数据计算,数据缺失时如实显示,不编造 */}
+        {(() => {
+          // 电平:统计各模块电压范围
+          const vrs = state.components.map(c => ({ name: c.name, vr: c.electrical?.voltageRange }));
+          const known = vrs.filter(x => Array.isArray(x.vr) && x.vr!.length === 2);
+          const unknownV = vrs.length - known.length;
+          const all33 = known.length > 0 && known.every(x => x.vr![0] <= 3.3 && x.vr![1] >= 3.3);
+          const vConflict = known.some(x => x.vr![0] > 3.3 || x.vr![1] < 3.3);
+
+          // I2C:比较真实地址
+          const i2cDevs = peripherals.filter(p => p.electrical?.protocols?.includes('I2C'));
+          const addrs = i2cDevs.map(d => (d.electrical as any)?.i2cAddress).filter(Boolean) as string[];
+          const dup = addrs.filter((a, i) => addrs.indexOf(a) !== i);
+          const unknownAddr = i2cDevs.length - addrs.length;
+
+          // 功耗:只对数值型 currentDraw 求和
+          const draws = state.components.map(c => {
+            const d = c.electrical?.currentDraw;
+            return typeof d === 'number' && Number.isFinite(d) ? d : null;
+          });
+          const sum = draws.reduce((s: number, d) => s + (d ?? 0), 0);
+          const unknownI = draws.filter(d => d === null).length;
+
+          const empty = state.components.length === 0;
+          return (
+            <div className="mt-8 grid grid-cols-3 gap-4">
+              <div className={`border p-5 rounded-eng-xl space-y-2 ${empty || unknownV > 0 ? 'bg-ink-50 border-ink-200' : vConflict ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-100'}`}>
+                <h4 className="text-meta font-semibold text-ink-500 uppercase tracking-wide">电平匹配校验</h4>
+                <p className="text-body text-ink-700 leading-relaxed">
+                  {empty ? '不适用:画布为空,无可校验模块。'
+                    : vConflict ? `⚠ 检测到与 3.3V 不兼容的电压范围,请核对:${known.filter(x => x.vr![0] > 3.3 || x.vr![1] < 3.3).map(x => x.name).join('、')}`
+                    : unknownV > 0 ? `${known.length} 个模块支持 3.3V;另有 ${unknownV} 个模块电压数据缺失,无法确认,请查阅规格书。`
+                    : all33 ? `${known.length} 个模块电压范围均覆盖 3.3V,无需电平转换。`
+                    : '电压数据不足,无法给出结论。'}
+                </p>
+              </div>
+              <div className={`border p-5 rounded-eng-xl space-y-2 ${empty || i2cDevs.length === 0 ? 'bg-ink-50 border-ink-200' : dup.length > 0 ? 'bg-red-50 border-red-200' : unknownAddr > 0 ? 'bg-ink-50 border-ink-200' : 'bg-green-50 border-green-100'}`}>
+                <h4 className="text-meta font-semibold text-ink-500 uppercase tracking-wide">I2C 地址冲突检查</h4>
+                <p className="text-body text-ink-700 leading-relaxed">
+                  {empty || i2cDevs.length === 0 ? '不适用:当前无 I2C 设备。'
+                    : dup.length > 0 ? `⚠ 检测到地址冲突:${Array.from(new Set(dup)).join(', ')},请修改其中一个设备地址。`
+                    : unknownAddr > 0 ? `${i2cDevs.length} 个 I2C 设备中 ${unknownAddr} 个地址数据缺失,无法完成冲突检查(已知:${addrs.join(', ') || '无'})。`
+                    : `${i2cDevs.length} 个 I2C 设备地址(${addrs.join(', ')})无冲突。`}
+                </p>
+              </div>
+              <div className={`border p-5 rounded-eng-xl space-y-2 ${empty || unknownI > 0 ? 'bg-ink-50 border-ink-200' : 'bg-green-50 border-green-100'}`}>
+                <h4 className="text-meta font-semibold text-ink-500 uppercase tracking-wide">功耗余量分析</h4>
+                <p className="text-body text-ink-700 leading-relaxed">
+                  {empty ? '不适用:画布为空。'
+                    : unknownI > 0 ? `已知模块电流合计约 ${sum}mA;另有 ${unknownI} 个模块电流数据缺失,实际峰值会更高,请预留余量。`
+                    : `预估峰值电流约 ${sum}mA,建议供电能力 ≥ ${sum < 400 ? '500mA' : sum < 900 ? '1A' : '2A'}。`}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="text-center pt-12 pb-4 text-[10px] text-slate-300 font-black uppercase tracking-[0.5em] italic">
           Seeed AI Genesis / Professional Hardware Report / Internal v1.4
