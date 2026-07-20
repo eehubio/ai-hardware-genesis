@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ProjectState } from '../types';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GoogleGenAI, Type } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
@@ -28,6 +29,9 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
   // 新流程:整机概念图基于模块照片 + 形态风格
   const [formStyle, setFormStyle] = useState<string>('desktop');
   const [userSketch, setUserSketch] = useState<string | null>(null); // 用户上传的草图(data URI)
+  // B2:真实 3D 模型(GLB)缓存。key=url,value: THREE.Group(成功)| 'loading' | 'error'
+  const modelCacheRef = useRef<Map<string, THREE.Group | 'loading' | 'error'>>(new Map());
+  const [modelTick, setModelTick] = useState(0); // 模型到货后触发场景重建
   // 第四阶段:衍生视图(多视角/爆炸图/内部布局)
   const [derivedViews, setDerivedViews] = useState<Record<string, string>>({}); // viewKey -> image
   const [derivedLoading, setDerivedLoading] = useState<string | null>(null); // 正在生成的 viewKey
@@ -212,6 +216,23 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       setIsAiThinking(false);
     }
   };
+
+
+  // B2:按需加载各模块的 GLB 模型(geometry.modelGlbUrl),失败静默回退包围盒
+  useEffect(() => {
+    const loader = new GLTFLoader();
+    state.components.forEach((c: any) => {
+      const url = c.geometry?.modelGlbUrl;
+      if (!url || modelCacheRef.current.has(url)) return;
+      modelCacheRef.current.set(url, 'loading');
+      loader.load(
+        url,
+        (gltf) => { modelCacheRef.current.set(url, gltf.scene); setModelTick(t => t + 1); },
+        undefined,
+        () => { modelCacheRef.current.set(url, 'error'); }
+      );
+    });
+  }, [state.components]);
 
   // B1:模块尺寸来自数据库真实数据(physical.dimensions > geometry.outline(KiCad) > 默认),
   // 每个模块分配识别色(丝印框着色 + 底部图例对应)。STEP 真实模型属 B2,当前为包围盒近似。
@@ -490,6 +511,33 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
 
       // Render custom 3D hardware components on the PCB board
       mappedComponents.forEach(comp => {
+        // B2:有 GLB 且已到货 → 用真实模型(自动按数据库尺寸缩放、底面贴板),跳过包围盒
+        const modelUrl = (comp as any).geometry?.modelGlbUrl;
+        const cached = modelUrl ? modelCacheRef.current.get(modelUrl) : undefined;
+        if (cached && cached !== 'loading' && cached !== 'error') {
+          const inst = (cached as THREE.Group).clone(true);
+          const bb = new THREE.Box3().setFromObject(inst);
+          const size = new THREE.Vector3(); bb.getSize(size);
+          const center = new THREE.Vector3(); bb.getCenter(center);
+          inst.position.sub(center);
+          inst.position.y += size.y / 2; // 底面归零
+          const footprint = Math.max(size.x, size.z) || 1;
+          const scale = Math.max(comp.cw, comp.ch) / footprint; // 单位差异(m/mm)自动消化
+          const wrap = new THREE.Group();
+          wrap.add(inst);
+          wrap.scale.setScalar(scale);
+          wrap.position.set(comp.posX, pcbHeightScale / 2, comp.posZ);
+          wrap.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+          pcbGroupRef.current?.add(wrap);
+          // 丝印识别框照画(图例颜色对应)
+          const oT = 0.08;
+          const oGeo = new THREE.BoxGeometry(comp.cw + 0.8, oT, comp.ch + 0.8);
+          const oMat = new THREE.MeshBasicMaterial({ color: (comp as any).color ?? 0xffffff, transparent: true, opacity: 0.95 });
+          const oMesh = new THREE.Mesh(oGeo, oMat);
+          oMesh.position.set(comp.posX, pcbHeightScale / 2 + oT / 2, comp.posZ);
+          pcbGroupRef.current?.add(oMesh);
+          return;
+        }
         const compGroup = new THREE.Group();
         compGroup.position.set(comp.posX, pcbHeightScale/2, comp.posZ);
 
@@ -761,7 +809,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       pcbGroupRef.current.position.y = pcbYPos;
     }
 
-  }, [params, shellW, shellH, xRay, mappedComponents]);
+  }, [params, shellW, shellH, xRay, mappedComponents, modelTick]);
 
   // Lightweight position update for explosion split visualization to guarantee 60fps performance
   useEffect(() => {
@@ -910,9 +958,10 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
               <span className="font-semibold text-slate-700">{(c.name || c.id).split(' ').slice(-2).join(' ')}</span>
               <span className="font-mono">{c.cw}×{c.ch}×{c.depth}mm</span>
               {c.dimSource === 'default' && <span className="text-amber-500" title="数据库缺尺寸,使用默认包围盒">≈</span>}
+              {(c as any).geometry?.modelGlbUrl && <span className="text-emerald-600" title="真实 3D 模型(KiCad 导出)">◆</span>}
             </span>
           ))}
-          <span className="text-[10px] text-slate-400 ml-auto">包围盒近似 · ≈=库内缺尺寸 · STEP 真实模型规划中</span>
+          <span className="text-[10px] text-slate-400 ml-auto">≈=库内缺尺寸(包围盒) · ◆=真实 3D 模型(KiCad) · 其余为包围盒近似</span>
         </div>
       )}
     </div>
