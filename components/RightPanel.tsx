@@ -1,5 +1,5 @@
 
-import { formatValue, normalizePinMapping } from '../utils/safe';
+import { formatValue, normalizePinMapping, numeric } from '../utils/safe';
 import React, { useState } from 'react';
 import { ProjectState, WorkflowMode, PipelineStatus, PCBFootprint } from '../types';
 
@@ -137,7 +137,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, setState, onModeChange, 
                   tips.push({ type: 'warn', text: `检测到 ${mcuCount} 个主控，通常一个系统只需一个主控。` });
                 }
                 // 总电流估算
-                const totalCurrent = comps.reduce((s, c) => s + (c.electrical?.currentDraw || 0), 0);
+                const totalCurrent = comps.reduce((s, c) => s + (numeric(c.electrical?.currentDraw) ?? 0), 0);
                 if (totalCurrent > 0) {
                   const rec = totalCurrent < 500 ? '500mA' : totalCurrent < 1000 ? '1A' : '2A';
                   tips.push({ type: 'info', text: `预估峰值电流约 ${totalCurrent}mA，建议电源供电能力 ≥ ${rec}。` });
@@ -251,11 +251,11 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
       <div className="grid grid-cols-3 gap-1.5">
         <div className="bg-white border border-ink-200 rounded-eng p-2">
           <div className="text-meta text-ink-400">电压</div>
-          <div className="text-body font-mono text-ink-800 mt-0.5">{e?.voltageRange ? `${e.voltageRange[0]}~${e.voltageRange[1]}V` : '—'}</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5">{Array.isArray(e?.voltageRange) ? `${formatValue(e!.voltageRange[0], 8)}~${formatValue(e!.voltageRange[1], 8)}V` : '—'}</div>
         </div>
         <div className="bg-white border border-ink-200 rounded-eng p-2">
           <div className="text-meta text-ink-400">电流</div>
-          <div className="text-body font-mono text-ink-800 mt-0.5">{e?.currentDraw != null ? `${e.currentDraw}mA` : '—'}</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5">{numeric(e?.currentDraw) != null ? `${numeric(e?.currentDraw)}mA` : '—'}</div>
         </div>
         <div className="bg-white border border-ink-200 rounded-eng p-2">
           <div className="text-meta text-ink-400">接口</div>
@@ -354,7 +354,7 @@ const ProjectGuide: React.FC<{ components: any[] }> = ({ components }) => {
   
   const totalCurrentDraw = components.reduce((sum, c) => {
     if (c.type === 'mcu' || c.id?.includes('xiao')) return sum;
-    return sum + (c.electrical?.currentDraw || 10);
+    return sum + (numeric(c.electrical?.currentDraw) ?? 10);
   }, mcuBaseCurrent);
 
   // Recommendations

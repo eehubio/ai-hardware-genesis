@@ -273,7 +273,9 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <Header projectName="智能硬件快速迭代项目" onModeToggle={toggleMode} mode={state.mode} />
+      <ErrorBoundary scope="app">
+          <Header projectName="智能硬件快速迭代项目" onModeToggle={toggleMode} mode={state.mode} />
+          </ErrorBoundary>
       {libraryLoading && (
         <div className="bg-amber-500/10 text-amber-700 text-xs px-4 py-1.5 border-b border-amber-500/20 text-center">
           正在从云端模块平台加载硬件库…
@@ -282,6 +284,7 @@ const App: React.FC = () => {
       <WorkflowProgress steps={state.mode === WorkflowMode.PROTOTYPE ? PROTOTYPE_STEPS : PCB_STEPS} currentStep={state.currentStep} setStep={(s) => setState(prev => ({ ...prev, currentStep: s }))} />
       <div className="flex flex-1 overflow-hidden relative">
         {!leftPanelCollapsed && (
+          <ErrorBoundary scope="app">
           <Sidebar 
             mode={state.mode} 
             state={state} 
@@ -292,6 +295,7 @@ const App: React.FC = () => {
             isProcessing={isProcessing}
             onCollapse={() => setLeftPanelCollapsed(true)}
           />
+          </ErrorBoundary>
         )}
         <main className="flex-1 overflow-y-auto bg-slate-100/50 relative min-w-0">
           <ErrorBoundary scope="app">
@@ -319,12 +323,14 @@ const App: React.FC = () => {
           )}
         </main>
         {!rightPanelCollapsed && (
+          <ErrorBoundary scope="app">
           <RightPanel
             state={state}
             setState={setState}
             onModeChange={(m) => setState(prev => ({ ...prev, mode: m }))}
             onCollapse={() => setRightPanelCollapsed(true)}
           />
+          </ErrorBoundary>
         )}
       </div>
     </div>
