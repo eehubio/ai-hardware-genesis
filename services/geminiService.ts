@@ -7,10 +7,20 @@ export const generateAIAssistance = async (prompt: string, state: ProjectState, 
 
   if (!activeApiKey) {
     try {
+      // 瘦身:助手只需要目录级信息;完整 state(含 pcbIR/贴图/大字段)会撑爆请求体且浪费 token
+      const slimState = {
+        currentStep: (state as any).currentStep,
+        mode: (state as any).mode,
+        components: (state.components || []).map((c: any) => ({ id: c.id, name: c.name, type: c.type })),
+        library: (state.library || []).map((c: any) => ({
+          id: c.id, name: c.name, type: c.type,
+          spec: typeof c.spec === 'string' ? c.spec.slice(0, 60) : ''
+        })),
+      };
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, state, history })
+        body: JSON.stringify({ prompt, state: slimState, history })
       });
       if (!res.ok) throw new Error(`Vercel status ${res.status}`);
       return await res.json();

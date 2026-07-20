@@ -67,6 +67,7 @@ export default async function handler(req: any, res: any) {
 ${catalog}
 
       STRICT RULE: solutionComponents may ONLY contain ids from the catalog above (first column, exact match). Never invent ids. If no suitable module exists in the catalog for a needed function, say so explicitly in text instead of substituting.
+      CAPABILITY MATCHING RULE: when the user's request implies a capability (audio output → speaker/amplifier/audio modules; display → display modules; wireless → communication modules; storage, input, etc.), SEARCH the catalog for matching modules and INCLUDE them in the solution. Do NOT tell the user to attach external hardware when a matching module exists in the catalog, unless the user explicitly prefers external.
 
       Current components placed on board: ${JSON.stringify(state.components.map((c: any) => c.id))}
       

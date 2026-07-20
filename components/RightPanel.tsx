@@ -232,7 +232,12 @@ interface ComponentDbTabsProps {
 const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateCompFootprint, isPcbMode }) => {
   const e = component.electrical;
   const p = component.physical;
-  const protocols = e?.protocols || [];
+  const KNOWN_PROTOCOLS = ['I2C','SPI','UART','GPIO','ADC','DAC','PWM','USB','CAN','RS485','I2S','WIFI','WI-FI','BLE','BLUETOOTH','LORA','ZIGBEE','NFC'];
+  const rawProtocols = (e?.protocols || []).filter((x: any) => typeof x === 'string') as string[];
+  // 标准协议(白名单命中)→ 品牌色小片;其余是描述文字 → 灰片截断显示
+  const protoKnown = rawProtocols.filter(pr => KNOWN_PROTOCOLS.includes(pr.toUpperCase().trim()));
+  const protoOther = rawProtocols.filter(pr => !KNOWN_PROTOCOLS.includes(pr.toUpperCase().trim()));
+  const protocols = protoKnown;
   const pinEntries = normalizePinMapping(e?.pinMapping);
   const pinMap = pinEntries.length > 0 ? pinEntries : null;
   const docUrl = (component.software as any)?.documentationUrl;
@@ -254,16 +259,19 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
         </div>
         <div className="bg-white border border-ink-200 rounded-eng p-2">
           <div className="text-meta text-ink-400">接口</div>
-          <div className="text-body font-mono text-ink-800 mt-0.5">{p?.connectorType || '—'}</div>
+          <div className="text-body font-mono text-ink-800 mt-0.5 truncate" title={p?.connectorType || ''}>{formatValue(p?.connectorType, 12)}</div>
         </div>
       </div>
 
       {/* 协议:有才显示 */}
-      {protocols.length > 0 && (
+      {(protocols.length > 0 || protoOther.length > 0) && (
         <div className="flex flex-wrap gap-1 items-center">
           <span className="text-meta text-ink-400 mr-1">协议</span>
           {protocols.map((pr: string, i: number) => (
-            <span key={i} className="text-meta font-mono bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded-eng">{pr}</span>
+            <span key={i} className="text-meta font-mono bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded-eng">{pr.toUpperCase()}</span>
+          ))}
+          {protoOther.map((pr: string, i: number) => (
+            <span key={`o${i}`} title={pr} className="text-meta bg-ink-100 text-ink-500 border border-ink-200 px-1.5 py-0.5 rounded-eng max-w-[120px] truncate inline-block align-bottom">{pr}</span>
           ))}
         </div>
       )}
