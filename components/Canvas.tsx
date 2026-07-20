@@ -164,13 +164,14 @@ const Canvas: React.FC<CanvasProps> = ({ state, setState, onRemove, onAdd, onUpd
     };
   }, [handleMouseMove, handleMouseUp]);
 
-  const mcu = state.components.find(c => c.type === 'mcu');
+  const mcu = state.components.find(c => c.type === 'mcu' || c.type === 'processor');
   
   const getBusInfo = (comp: CanvasComponent, index: number) => {
-    const spec = comp.spec.toLowerCase();
-    if (spec.includes('i2c')) return { label: 'I2C', color: '#3b82f6', pins: ['D4', 'D5'], pinNames: ['SDA', 'SCL'] };
-    if (spec.includes('spi')) return { label: 'SPI', color: '#a855f7', pins: ['D8', 'D9', 'D10'], pinNames: ['SCK', 'MISO', 'MOSI'] };
-    if (spec.includes('uart')) return { label: 'UART', color: '#eab308', pins: ['D6', 'D7'], pinNames: ['TX', 'RX'] };
+    const protos = (comp.electrical?.protocols || []).map(p => String(p).toUpperCase());
+    const spec = (comp.spec || '').toLowerCase();
+    if (protos.includes('I2C') || spec.includes('i2c')) return { label: 'I2C', color: '#3b82f6', pins: ['D4', 'D5'], pinNames: ['SDA', 'SCL'] };
+    if (protos.includes('SPI') || spec.includes('spi')) return { label: 'SPI', color: '#a855f7', pins: ['D8', 'D9', 'D10'], pinNames: ['SCK', 'MISO', 'MOSI'] };
+    if (protos.includes('UART') || spec.includes('uart')) return { label: 'UART', color: '#eab308', pins: ['D6', 'D7'], pinNames: ['TX', 'RX'] };
     return { label: 'GPIO', color: '#22c55e', pins: [`D${index % 4}`], pinNames: ['IO'] };
   };
 

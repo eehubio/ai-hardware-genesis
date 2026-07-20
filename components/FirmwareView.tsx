@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { composeFirmware } from '../lib/firmware-composer';
 import { ProjectState, CanvasComponent } from '../types';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -43,28 +42,13 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
     setIsAiThinking(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `
-        Current Language: ${lang}
-        Hardware List: ${JSON.stringify(peripherals.map(p => ({name: p.name, spec: p.spec})))}
-        Current Code: 
-        \`\`\`
-        ${currentCode}
-        \`\`\`
-        
-        User Instruction: ${userText}
-        
-        Please act as a senior Seeed Studio firmware expert. 
-        1. If the user wants a code change, provide the FULL corrected code inside a markdown block.
-        2. Explain the changes briefly in Chinese using Markdown (use bold, lists, etc. for readability).
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
+      const res = await fetch('/api/firmware-chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang, peripherals: peripherals.map(p => ({ name: p.name, id: p.id, protocols: p.electrical?.protocols })), currentCode, instruction: userText })
       });
-
-      const fullText = response.text || "抱歉，我无法处理该请求。";
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `status ${res.status}`);
+      const fullText = data.text || "抱歉，我无法处理该请求。";
       setMessages(prev => [...prev, { role: 'assistant', text: fullText }]);
 
       const codeMatch = fullText.match(/```(?:arduino|cpp|python|micropython|)\n([\s\S]*?)```/);
