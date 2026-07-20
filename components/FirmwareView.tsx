@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { composeFirmware } from '../lib/firmware-composer';
 import { ProjectState, CanvasComponent } from '../types';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
@@ -25,40 +26,12 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAiThinking]);
 
-  // 模拟管脚分配
-  const getPinForIndex = (idx: number, spec: string) => {
-    const s = spec.toLowerCase();
-    if (s.includes('i2c')) return { pins: ['D4', 'D5'], names: ['SDA', 'SCL'] };
-    if (s.includes('spi')) return { pins: ['D8', 'D9', 'D10'], names: ['SCK', 'MISO', 'MOSI'] };
-    if (s.includes('uart')) return { pins: ['D6', 'D7'], names: ['TX', 'RX'] };
-    return { pins: [`D${idx % 4}`], names: ['SIG'] };
-  };
-
-  const getModuleLogic = (p: CanvasComponent, idx: number, isCpp: boolean) => {
-    const pinInfo = getPinForIndex(idx, p.spec);
-    const name = p.name.toLowerCase();
-    if (isCpp) {
-      if (name.includes('bme280')) return `  // ${p.name} Logic\n  float temp = bme.readTemperature();\n  float humi = bme.readHumidity();\n  Serial.print("Temp: "); Serial.println(temp);`;
-      if (name.includes('oled')) return `  // ${p.name} Refresh\n  display.clearDisplay();\n  display.setCursor(0,0);\n  display.println("Seeed Genesis v1.0");\n  display.display();`;
-      if (name.includes('relay')) return `  digitalWrite(${pinInfo.pins[0]}, HIGH); // Switch Relay ON\n  delay(1000);\n  digitalWrite(${pinInfo.pins[0]}, LOW);`;
-      return `  int val_${idx} = analogRead(${pinInfo.pins[0]});\n  Serial.print("${p.name}: "); Serial.println(val_${idx});`;
-    }
-    return `        # Read ${p.name}\n        val_${idx} = pin_${idx}.value()\n        print("${p.name} value:", val_${idx})`;
-  };
-
-  const generateFullCode = (targetLang: 'arduino' | 'micropython') => {
-    if (!mcu) return "// 请先添加主控板";
-    if (targetLang === 'arduino') {
-      const includes = Array.from(new Set(['#include <Arduino.h>', '#include <Wire.h>', ...peripherals.map(p => p.name.includes('BME280') ? '#include <Adafruit_BME280.h>' : p.name.includes('OLED') ? '#include <Adafruit_SSD1306.h>' : '')])).filter(v => v).join('\n');
-      const instances = peripherals.map(p => p.name.includes('BME280') ? 'Adafruit_BME280 bme;' : p.name.includes('OLED') ? '#define SCREEN_WIDTH 128\n#define SCREEN_HEIGHT 64\nAdafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);' : '').filter(v => v).join('\n');
-      return `${includes}\n\n// --- Hardware Instances ---\n${instances}\n\nvoid setup() {\n  Serial.begin(115200);\n  Wire.begin();\n  \n${peripherals.map((p, i) => p.name.includes('BME280') ? '  bme.begin(0x76);' : p.name.includes('OLED') ? '  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);' : `  pinMode(${getPinForIndex(i, p.spec).pins[0]}, INPUT);`).join('\n')} \n}\n\nvoid loop() {\n${peripherals.map((p, i) => getModuleLogic(p, i, true)).join('\n')}\n  delay(2000);\n}`;
-    }
-    return `import time\nfrom machine import Pin, I2C\n\n# --- System Setup ---\ni2c = I2C(0, scl=Pin(5), sda=Pin(4))\n\n# --- Peripheral Initialization ---\n${peripherals.map((p, i) => `pin_${i} = Pin(${getPinForIndex(i, p.spec).pins[0].replace('D','')}, Pin.IN)`).join('\n')}\n\ndef main():\n    while True:\n${peripherals.map((p, i) => getModuleLogic(p, i, false)).join('\n')}\n        time.sleep(2)\n\nif __name__ == "__main__":\n    main()`;
-  };
+  // A1:按模块标准片段拼装固件(DB 片段 > 内置参考 > 诚实 TODO)
+  const composed = React.useMemo(() => composeFirmware(state.components, lang), [state.components, lang]);
 
   useEffect(() => {
-    if (!isEdited) setCurrentCode(generateFullCode(lang));
-  }, [lang, state.components, isEdited]);
+    if (!isEdited) setCurrentCode(composed.code);
+  }, [lang, state.components, isEdited, composed]);
 
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +102,7 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 <button onClick={() => {setLang('arduino'); setIsEdited(false);}} className={`px-4 py-2 rounded-eng text-body font-semibold transition-colors ${lang === 'arduino' ? 'bg-brand-600 text-white' : 'text-ink-400 hover:text-white'}`}>Arduino (C++)</button>
                 <button onClick={() => {setLang('micropython'); setIsEdited(false);}} className={`px-4 py-2 rounded-eng text-body font-semibold transition-colors ${lang === 'micropython' ? 'bg-brand-600 text-white' : 'text-ink-400 hover:text-white'}`}>MicroPython</button>
              </div>
-             <button onClick={() => {setIsEdited(false); setCurrentCode(generateFullCode(lang));}} className="px-4 py-2 bg-ink-800 text-ink-300 rounded-eng text-body font-semibold hover:bg-ink-700 border border-ink-700 transition-colors">重新生成</button>
+             <button onClick={() => {setIsEdited(false); setCurrentCode(composed.code);}} className="px-4 py-2 bg-ink-800 text-ink-300 rounded-eng text-body font-semibold hover:bg-ink-700 border border-ink-700 transition-colors">重新生成</button>
              <button 
                 onClick={() => setState(p => ({ ...p, currentStep: 3 }))}
                 className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1.5"
@@ -188,13 +161,9 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 <div className="flex items-start gap-2 text-body">
                   <span className="text-ink-500 shrink-0 w-14">依赖库</span>
                   <div className="flex flex-wrap gap-1">
-                    {(() => {
-                      const libs = Array.from(new Set((currentCode.match(/#include\s+<([^>]+)>/g) || [])
-                        .map(s => s.replace(/#include\s+<|>/g, ''))
-                        .filter(l => !['Arduino.h', 'Wire.h', 'SPI.h'].includes(l))));
-                      if (libs.length === 0) return <span className="text-ink-500 text-meta">仅标准库</span>;
-                      return libs.map(l => <span key={l} className="text-meta font-mono bg-ink-800 text-brand-300 px-1.5 py-0.5 rounded-eng">{l}</span>);
-                    })()}
+                    {composed.libs.length === 0
+                      ? <span className="text-ink-500 text-meta">仅标准库</span>
+                      : composed.libs.map(l => <span key={l} className="text-meta font-mono bg-ink-800 text-brand-300 px-1.5 py-0.5 rounded-eng">{l}</span>)}
                   </div>
                 </div>
                 {/* 烧录提示 */}
@@ -294,12 +263,22 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-500" /> 外设模块 ({peripherals.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {peripherals.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-ink-800 rounded-eng border border-ink-700 group hover:bg-ink-700 transition-colors">
-                      <img src={p.thumb} className="w-4 h-4 object-contain opacity-70 group-hover:opacity-100 transition-opacity" />
-                      <span className="text-meta font-medium text-ink-300 group-hover:text-ink-100">{p.name.split(' ').pop()}</span>
-                    </div>
-                  ))}
+                  {peripherals.map((p, i) => {
+                    const info = composed.modules.find(m => m.id === p.id);
+                    const src2 = info?.source || 'todo';
+                    const border = src2 === 'db' ? 'border-brand-500' : src2 === 'builtin' ? 'border-ink-500' : 'border-amber-500';
+                    const title = src2 === 'db' ? '代码来自模块库标准片段' : src2 === 'builtin' ? '代码来自内置参考片段(待入库)' : '缺少验证片段,代码中为 TODO';
+                    return (
+                      <div key={i} title={title} className={`flex items-center gap-1.5 px-2 py-1 bg-ink-800 rounded-eng border ${border} group hover:bg-ink-700 transition-colors`}>
+                        <img src={p.thumb} className="w-4 h-4 object-contain opacity-70 group-hover:opacity-100 transition-opacity" />
+                        <span className="text-meta font-medium text-ink-300 group-hover:text-ink-100">{p.name.split(' ').pop()}</span>
+                        {src2 === 'todo' && <span className="text-amber-400 text-meta">⚠</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 text-[9px] text-ink-500">
+                  边框:<span className="text-brand-400">绿=库内片段</span> · 灰=内置参考 · <span className="text-amber-400">黄⚠=缺片段(代码中为 TODO,可让右侧 AI 生成)</span>
                 </div>
              </div>
           </div>
