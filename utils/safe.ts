@@ -56,12 +56,26 @@ export function numeric(v: unknown): number | null {
  *  只保留标量值(string/number)的条目 —— 这些才是真正的引脚分配(如 SDA→"D4")。
  *  对象/数组值(KiCad 导入的结构化连接器/溯源数据混入 pinMapping 时)直接跳过,
  *  既防崩溃,也避免把 "reference/kind/…" 之类的内部结构当引脚显示出来。 */
+const PIN_META_KEYS = new Set([
+  'connectors', 'verificationstatus', 'source', 'provenance', 'notes',
+  'reference', 'kind', 'documentation', 'sourcefile', 'sourcecommit',
+  'status', 'verified', 'datasheet', 'wiki', 'description', 'comment',
+]);
+
 export function normalizePinMapping(pm: unknown): [string, string][] {
   if (!pm || typeof pm !== 'object' || Array.isArray(pm)) return [];
   return Object.entries(pm as Record<string, unknown>)
-    .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
-    .map(([k, v]) => [k, String(v)] as [string, string])
-    .filter(([, v]) => v.trim() !== '');
+    .filter(([k, v]) => {
+      // 元数据键(混入 pinMapping 的校验状态/来源说明等)不属于引脚,跳过
+      if (PIN_META_KEYS.has(k.toLowerCase())) return false;
+      // 只认标量值
+      if (typeof v !== 'string' && typeof v !== 'number') return false;
+      const s = String(v).trim();
+      // 引脚号形如 D4 / A0 / GPIO21 / 3V3:短、无空格。含空格或过长的是说明文字,不是引脚
+      if (!s || s.length > 12 || /\s/.test(s)) return false;
+      return true;
+    })
+    .map(([k, v]) => [k, String(v).trim()] as [string, string]);
 }
 
 /** 从 pinMapping 安全取单个引脚:仅当值为标量时返回字符串,否则返回 fallback。 */

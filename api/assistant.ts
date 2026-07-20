@@ -54,13 +54,19 @@ export default async function handler(req: any, res: any) {
       .map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`)
       .join('\n');
 
+    // F-03 根修:硬件清单从真实模块库动态生成(前端已随 state.library 传入),
+    // 不再使用写死清单 —— 新建到云库的模块(如音频放大器)立刻可被推荐。
+    const lib: any[] = Array.isArray(state.library) ? state.library : [];
+    const catalog = lib.length > 0
+      ? lib.map((c: any) => `${c.id} | ${c.name || ''} | ${c.type || ''}${c.spec ? ' | ' + String(c.spec).slice(0, 40) : ''}`).join('\n')
+      : '(module library is empty)';
+
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Available Hardware:
-      - MCUs: xiao_esp32s3 (ESP32-S3), xiao_nrf52840_sense, xiao_rp2040
-      - Sensors: bme280 (temp/humidity/pressure), sht40 (temp/humidity), sgp40 (VOC), lis3dhtr (accelerometer), gps_air530 (GPS), grove_vision_ai_v2 (vision AI), ultrasonic (distance), pir_sensor (motion), light_sensor, soil_moisture
-      - Displays: oled_096, lcd_rgb_backlight
-      - Actuators: relay, buzzer, rotary_encoder, led_chainable, lora_e5 (LoRaWAN)
+      contents: `Available Hardware Catalog (LIVE database, format: id | name | type | brief):
+${catalog}
+
+      STRICT RULE: solutionComponents may ONLY contain ids from the catalog above (first column, exact match). Never invent ids. If no suitable module exists in the catalog for a needed function, say so explicitly in text instead of substituting.
 
       Current components placed on board: ${JSON.stringify(state.components.map((c: any) => c.id))}
       

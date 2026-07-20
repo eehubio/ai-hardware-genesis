@@ -1,5 +1,5 @@
 
-import { formatValue } from '../utils/safe';
+import { formatValue, normalizePinMapping } from '../utils/safe';
 import React, { useState } from 'react';
 import { ProjectState, WorkflowMode, PipelineStatus, PCBFootprint } from '../types';
 
@@ -233,7 +233,8 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
   const e = component.electrical;
   const p = component.physical;
   const protocols = e?.protocols || [];
-  const pinMap = e?.pinMapping && Object.keys(e.pinMapping).length > 0 ? e.pinMapping : null;
+  const pinEntries = normalizePinMapping(e?.pinMapping);
+  const pinMap = pinEntries.length > 0 ? pinEntries : null;
   const docUrl = (component.software as any)?.documentationUrl;
   const ghUrl = (component.software as any)?.githubUrl;
   const libs = component.software?.requiredLibraries || [];
@@ -281,10 +282,10 @@ const ComponentDbTabs: React.FC<ComponentDbTabsProps> = ({ component, updateComp
         <div className="bg-white border border-ink-200 rounded-eng p-2">
           <div className="text-meta text-ink-400 mb-1">引脚映射</div>
           <div className="space-y-0.5">
-            {Object.entries(pinMap).map(([pin, func]: any, i) => (
+            {pinMap.map(([pin, func], i) => (
               <div key={i} className="flex justify-between text-meta font-mono py-0.5 border-b border-dotted border-ink-100 last:border-0">
                 <span className="text-ink-500">{pin}</span>
-                <span className="text-brand-600">{formatValue(func, 24)}</span>
+                <span className="text-brand-600">{func}</span>
               </div>
             ))}
           </div>
