@@ -211,6 +211,22 @@ const HardwareClippingView: React.FC<{ state: ProjectState; setState: React.Disp
         })}
       </div>
 
+      {/* 下一步操作栏 */}
+      <div className="flex items-center justify-between p-3.5 bg-white border border-ink-200 rounded-eng-lg">
+        <div className="text-body text-ink-600">
+          {(() => {
+            const cnt = { full: 0, core: 0, remove: 0 } as Record<string, number>;
+            analyses.forEach(a => { cnt[(a.comp.clipDecision ?? a.recommended)]++; });
+            return <>决策汇总:<b className="text-sky-700">{cnt.full} 整模块</b> · <b className="text-emerald-700">{cnt.core} 提取核心</b> · <b className="text-red-600">{cnt.remove} 移除</b>(未手动选择的按 ★ 建议计,已随项目自动保存)</>;
+          })()}
+        </div>
+        <button
+          onClick={() => setState(p => ({ ...p, currentStep: 2 }))}
+          className="px-6 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-bold hover:bg-brand-700 transition-colors flex items-center gap-2">
+          决策完成 · 进入 PCB 约束 →
+        </button>
+      </div>
+
       <p className="text-meta text-ink-400 leading-relaxed">
         ★ = 系统建议 · 决策随项目保存。「提取核心」的具体器件保留清单依赖各模块 KiCad 子电路提取(网络与 BOM 数据已就位,精细到"哪个电阻必须留"的自动分析在后续版本提供);当前版本给出模块级取舍与连接器/电源冗余合并方向。
       </p>
