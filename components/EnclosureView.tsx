@@ -259,12 +259,50 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     });
   }, [state.components, pcbW, pcbH]);
 
+  // 结构视图去堆叠:未经 PCB 布局(或坐标折算后重叠)的模块,用确定性弛豫拉开;
+  // 已有合理间距的真实布局原样保留。
+  const arrangedComponents = useMemo(() => {
+    const boxes = mappedComponents.map(c => ({ ...c }));
+    const overlap = (a: any, b: any) =>
+      Math.abs(a.posX - b.posX) < (a.cw + b.cw) / 2 + 1 && Math.abs(a.posZ - b.posZ) < (a.ch + b.ch) / 2 + 1;
+    let hasOverlap = false;
+    for (let i = 0; i < boxes.length && !hasOverlap; i++)
+      for (let j = i + 1; j < boxes.length; j++)
+        if (overlap(boxes[i], boxes[j])) { hasOverlap = true; break; }
+    if (!hasOverlap) return mappedComponents;
+    // 堆叠种子确定性打散(按索引环形铺开),再 80 轮矩形斥力 + 板内钳位
+    boxes.forEach((b, i) => {
+      const ang = (i / Math.max(1, boxes.length)) * Math.PI * 2;
+      b.posX += Math.cos(ang) * 6 * (i + 1) * 0.5;
+      b.posZ += Math.sin(ang) * 6 * (i + 1) * 0.5;
+    });
+    for (let iter = 0; iter < 80; iter++) {
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i], b = boxes[j];
+          const dx = a.posX - b.posX, dz = a.posZ - b.posZ;
+          const ox = (a.cw + b.cw) / 2 + 2 - Math.abs(dx);
+          const oz = (a.ch + b.ch) / 2 + 2 - Math.abs(dz);
+          if (ox > 0 && oz > 0) {
+            if (ox < oz) { const p = (dx >= 0 ? 1 : -1) * ox / 2; a.posX += p; b.posX -= p; }
+            else { const p = (dz >= 0 ? 1 : -1) * oz / 2; a.posZ += p; b.posZ -= p; }
+          }
+        }
+      boxes.forEach(b => {
+        b.posX = Math.max(-pcbW / 2 + b.cw / 2, Math.min(pcbW / 2 - b.cw / 2, b.posX));
+        b.posZ = Math.max(-pcbH / 2 + b.ch / 2, Math.min(pcbH / 2 - b.ch / 2, b.posZ));
+      });
+    }
+    boxes.forEach(b => { b.posX = Math.round(b.posX * 10) / 10; b.posZ = Math.round(b.posZ * 10) / 10; });
+    return boxes;
+  }, [mappedComponents, pcbW, pcbH]);
+
   // 外壳自动适配:按真实模块占位 + 间隙求外框;高度按最高模块 + PCB + 铜柱 + 盖内净空
   const autoFitShell = () => {
-    if (!mappedComponents.length) return;
-    const maxHalfW = Math.max(...mappedComponents.map(c => Math.abs(c.posX) + c.cw / 2));
-    const maxHalfH = Math.max(...mappedComponents.map(c => Math.abs(c.posZ) + c.ch / 2));
-    const maxDepth = Math.max(...mappedComponents.map(c => c.depth));
+    if (!arrangedComponents.length) return;
+    const maxHalfW = Math.max(...arrangedComponents.map(c => Math.abs(c.posX) + c.cw / 2));
+    const maxHalfH = Math.max(...arrangedComponents.map(c => Math.abs(c.posZ) + c.ch / 2));
+    const maxDepth = Math.max(...arrangedComponents.map(c => c.depth));
     setParams(prev => ({
       ...prev,
       width: Math.max(Math.ceil(maxHalfW * 2 + 16), pcbW + 6),
@@ -510,7 +548,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       });
 
       // Render custom 3D hardware components on the PCB board
-      mappedComponents.forEach(comp => {
+      arrangedComponents.forEach(comp => {
         // B2:有 GLB 且已到货 → 用真实模型(自动按数据库尺寸缩放、底面贴板),跳过包围盒
         const modelUrl = (comp as any).geometry?.modelGlbUrl;
         const cached = modelUrl ? modelCacheRef.current.get(modelUrl) : undefined;
@@ -809,7 +847,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       pcbGroupRef.current.position.y = pcbYPos;
     }
 
-  }, [params, shellW, shellH, xRay, mappedComponents, modelTick]);
+  }, [params, shellW, shellH, xRay, arrangedComponents, modelTick]);
 
   // Lightweight position update for explosion split visualization to guarantee 60fps performance
   useEffect(() => {
@@ -950,9 +988,9 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
           </div>
         )}
       </div>
-      {!floating && mappedComponents.length > 0 && (
+      {!floating && arrangedComponents.length > 0 && (
         <div className="w-full mt-2 flex flex-wrap gap-x-4 gap-y-1 px-2">
-          {mappedComponents.map((c: any, i) => (
+          {arrangedComponents.map((c: any, i) => (
             <span key={i} className="inline-flex items-center gap-1.5 text-[10px] text-slate-500">
               <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: '#' + c.color.toString(16).padStart(6, '0') }} />
               <span className="font-semibold text-slate-700">{(c.name || c.id).split(' ').slice(-2).join(' ')}</span>
