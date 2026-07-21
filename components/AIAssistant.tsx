@@ -77,59 +77,57 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploading(true);
-    setTimeout(() => {
-      let content = "该上传文件中包含如下物联网需求描述：选用高低功耗双模蓝牙开发板，配备空气微粒计以及大功率电磁泵驱动，保障户外气象信息连续采集。";
-      const name = file.name.toLowerCase();
-      if (name.includes('air') || name.includes('空气') || name.includes('sgp40')) {
-        content = "该空气质量需求案提出：配置 XIAO ESP32-S3 与 SGP40 VOC 物资检测传感器以及 SHT40 开发套件。配合 OLED 对检测污染指数进行实时读秒。";
-      } else if (name.includes('water') || name.includes('水') || name.includes('irrigation') || name.includes('soil')) {
-        content = "智能水分自动化控制设备指标：使用 XIAO RP2040 以及 Soil Moisture 水分测量模块。结合 Relay 驱动水泵定时开启灌溉。";
-      } else if (name.includes('gesture') || name.includes('wrist') || name.includes('加速度') || name.includes('motion')) {
-        content = "低功耗姿态轨迹仪：需要用到集成了 LIS3DHTR 加速度计的超小型高能效 XIAO nRF52840 Sense 核心，配合一个大音量 Buzzer 做响应警报和 OLED 显示手势角度。";
-      }
-
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          setAttachedFile({
-            name: file.name,
-            size: `${(file.size / 1024).toFixed(1)} KB`,
-            type: file.type,
-            simulatedContent: content,
-            base64: reader.result as string
-          });
-          setIsUploading(false);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        setAttachedFile({
-          name: file.name,
-          size: `${(file.size / 1024).toFixed(1)} KB`,
-          type: file.type,
-          simulatedContent: content
-        });
-        setIsUploading(false);
-      }
-    }, 850);
+    const finish = (content: string, base64?: string) => {
+      setAttachedFile({
+        name: file.name,
+        size: `${(file.size / 1024).toFixed(1)} KB`,
+        type: file.type,
+        simulatedContent: content,
+        ...(base64 ? { base64 } : {})
+      });
+      setIsUploading(false);
+    };
+    const lname = file.name.toLowerCase();
+    const isTextLike = file.type.startsWith('text/') || /\.(txt|md|markdown|csv|json|log)$/.test(lname);
+    if (isTextLike) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const raw = String(reader.result || '').slice(0, 6000);
+        finish(raw.trim() ? raw : '(文件为空)');
+      };
+      reader.onerror = () => finish('(文件读取失败)');
+      reader.readAsText(file);
+    } else if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => finish('图片附件(系统未做图像内容解析,请在需求描述中补充关键信息)', reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      finish(`暂不支持解析 ${file.name.split('.').pop()} 格式(支持 txt/md/csv/json)。请转存为文本或把关键需求直接粘贴到输入框。`);
+    }
   };
 
-  const handleCustomUrlParse = (urlToParse: string) => {
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const handleCustomUrlParse = async (urlToParse: string) => {
     if (!urlToParse.trim()) return;
     setIsUrlParsing(true);
-    setTimeout(() => {
-      let content = `已抓取目标网页并深度精炼：这是来自 ${urlToParse} 的参考设计，要求使用超低功耗蓝牙主控板 XIAO nRF52840 Sense（包含 LIS3DHTR）作为芯片运动感应，配合外接 Buzzer 设备，采用锂电池供电。`;
-      if (urlToParse.toLowerCase().includes('esp32')) {
-        content = `已抓取目标网页并深度精炼：这是来自 ${urlToParse} 的参考设计，利用多核主控 XIAO ESP32-S3 配合高阶 Vision AI v2 摄像头作图像捕获，再用 Buzzer 做状态播报反馈。`;
-      } else if (urlToParse.toLowerCase().includes('water') || urlToParse.toLowerCase().includes('moisture')) {
-        content = `已抓取目标网页并深度精炼：这是来自 ${urlToParse} 的参考设计，配合 Soil Moisture 土壤环境采集指标以及 Relay 控制阀设备接口，构建大田遥测节水微控制器系统。`;
-      }
-      setAttachedUrl({
-        url: urlToParse,
-        extractedText: content
+    setUrlError(null);
+    try {
+      const res = await fetch('/api/fetch-url', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlToParse.trim() })
       });
-      setIsUrlParsing(false);
+      const data = await res.json();
+      if (!res.ok) { setUrlError(data?.error || `抓取失败(${res.status})`); return; }
+      setAttachedUrl({
+        url: urlToParse.trim(),
+        extractedText: (data.title ? `【${data.title}】\n` : '') + data.text
+      });
       setInputUrl('');
-    }, 850);
+    } catch {
+      setUrlError('网络异常,抓取失败,请重试');
+    } finally {
+      setIsUrlParsing(false);
+    }
   };
 
   useEffect(() => {
@@ -147,13 +145,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
     if (attachedFile) {
       finalPrompt = `[用户通过文档或图片导入了设计要求]
 已上传文件：${attachedFile.name} (${attachedFile.size})
-文档解析出核心指标：${attachedFile.simulatedContent}
+文档内容节选：${attachedFile.simulatedContent.slice(0, 3000)}
 
 用户的留言说明：${input.trim() || '请根据此上传规格书的最佳指示，推荐对应的 XIAO 微控制器以及 Grove 元器件模块。'}`;
     } else if (attachedUrl) {
       finalPrompt = `[用户通过网页抽取了设计要求]
 来源网址：${attachedUrl.url}
-抓取解析页面概要：${attachedUrl.extractedText}
+网页正文节选(服务端抓取)：${attachedUrl.extractedText.slice(0, 3000)}
 
 用户的留言说明：${input.trim() || '请根据此网页内容的指示，推荐对应的 XIAO 控制板与传感器/执行器子模块组合。'}`;
     }
@@ -323,6 +321,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                 >
                   {isUrlParsing ? '提取中...' : '解析'}
                 </button>
+                {urlError && <div className="mt-1 text-[10px] text-red-500 font-semibold w-full">✘ {urlError}</div>}
               </div>
 
               <div className="space-y-1">
@@ -714,6 +713,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                   >
                     {isUrlParsing ? '提取中...' : '提取页面'}
                   </button>
+                {urlError && <div className="mt-1 text-[10px] text-red-500 font-semibold w-full">✘ {urlError}</div>}
                 </div>
 
                 <div className="space-y-1.5">

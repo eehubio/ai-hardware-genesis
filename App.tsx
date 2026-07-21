@@ -131,6 +131,61 @@ const App: React.FC = () => {
   const [aiHistory, setAiHistory] = useState<AIAgentMessage[]>([
     { id: '1', role: 'assistant', text: '欢迎来到 Seeed AI 智造平台。我是您的项目架构师。您可以告诉我您的设计目标（例如：制作一个自动浇花系统），我会为您推荐硬件方案。' }
   ]);
+  // ===== F-14 修复:项目状态持久化(刷新不再丢方案) =====
+  const PERSIST_KEY = 'genesis_project_v1';
+  // 恢复:仅白名单字段;library/categories 始终由云端拉取,不持久化
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved?.state) {
+        setState(prev => ({
+          ...prev,
+          mode: saved.state.mode ?? prev.mode,
+          currentStep: saved.state.currentStep ?? prev.currentStep,
+          components: Array.isArray(saved.state.components) ? saved.state.components : prev.components,
+          connections: Array.isArray(saved.state.connections) ? saved.state.connections : prev.connections,
+          pcbConstraints: saved.state.pcbConstraints ?? prev.pcbConstraints,
+          artifacts: Array.isArray(saved.state.artifacts) ? saved.state.artifacts : prev.artifacts,
+          status: saved.state.status ?? prev.status,
+        }));
+      }
+      if (Array.isArray(saved?.aiHistory) && saved.aiHistory.length > 0) {
+        setAiHistory(saved.aiHistory);
+      }
+    } catch { /* 损坏的存档直接忽略 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 保存:防抖 800ms;贴图(base64 大块)不入存档以防超配额,超配额时降级重试
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const payload = {
+        v: 1,
+        state: {
+          mode: state.mode, currentStep: state.currentStep,
+          components: state.components, connections: state.connections,
+          pcbConstraints: state.pcbConstraints, artifacts: state.artifacts, status: state.status,
+        },
+        aiHistory: aiHistory.slice(-50),
+      };
+      try {
+        localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
+      } catch {
+        try {
+          localStorage.setItem(PERSIST_KEY, JSON.stringify({ ...payload, aiHistory: aiHistory.slice(-10) }));
+        } catch { /* 实在放不下就放弃本次保存 */ }
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [state.mode, state.currentStep, state.components, state.connections, state.pcbConstraints, state.artifacts, state.status, aiHistory]);
+
+  const resetProject = () => {
+    if (!window.confirm('确定重置项目?画布、对话与进度将清空(模块库不受影响)。')) return;
+    localStorage.removeItem(PERSIST_KEY);
+    window.location.reload();
+  };
+
   const [isProcessing, setIsProcessing] = useState(false);
 
   const applySolution = (ids: string[]) => {
@@ -274,7 +329,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <ErrorBoundary scope="app">
-          <Header projectName="智能硬件快速迭代项目" onModeToggle={toggleMode} mode={state.mode} />
+          <Header onReset={resetProject} projectName="智能硬件快速迭代项目" onModeToggle={toggleMode} mode={state.mode} />
           </ErrorBoundary>
       {libraryLoading && (
         <div className="bg-amber-500/10 text-amber-700 text-xs px-4 py-1.5 border-b border-amber-500/20 text-center">

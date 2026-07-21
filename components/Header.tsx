@@ -3,12 +3,13 @@ import React from 'react';
 import { WorkflowMode } from '../types';
 
 interface HeaderProps {
+  onReset?: () => void;
   projectName: string;
   mode: WorkflowMode;
   onModeToggle: (newMode?: WorkflowMode) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ projectName, mode, onModeToggle }) => {
+const Header: React.FC<HeaderProps> = ({ onReset, projectName, mode, onModeToggle }) => {
   const handleExportProject = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mode === WorkflowMode.PROTOTYPE ? { projectName, mode, currentStep: 0 } : { projectName, mode, currentStep: 0 }));
     const downloadAnchorNode = document.createElement('a');
@@ -48,6 +49,13 @@ const Header: React.FC<HeaderProps> = ({ projectName, mode, onModeToggle }) => {
           </button>
         </div>
         
+        <button
+          onClick={onReset}
+          title="清空画布/对话/进度并重新开始"
+          className="px-3 py-2 text-body font-semibold text-ink-400 hover:text-red-500 transition-colors"
+        >
+          重置
+        </button>
         <button 
           onClick={handleExportProject}
           className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-eng text-body font-semibold transition-colors"

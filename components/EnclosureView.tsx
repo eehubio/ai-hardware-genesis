@@ -967,6 +967,20 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     </div>
   );
 
+  // F-08 修复:空项目不进入外壳设计,不产出任何"分析结论"
+  if (state.components.length === 0) {
+    return (
+      <div className="flex-1 h-full flex items-center justify-center p-10">
+        <div className="text-center max-w-sm space-y-3">
+          <div className="text-4xl">📦</div>
+          <div className="text-h3 text-ink-900 font-bold">外壳设计需要先有模块</div>
+          <p className="text-body text-ink-500">当前画布为空。请返回「意图识别 / 原型连线」添加模块后,再进行外壳与结构设计——空项目不会生成任何工艺或结构结论。</p>
+          <button onClick={() => setState(p => ({ ...p, currentStep: 0 }))} className="px-5 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-semibold hover:bg-brand-700">返回画布添加模块</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-full transition-all duration-500 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-950' : 'bg-ink-50 p-5'}`}>
       {/* 产品效果图弹窗 */}
@@ -1198,7 +1212,7 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                      <div className="text-[10px] text-indigo-400 font-black tracking-widest">REAL-TIME VALIDATION</div>
                   </div>
                </div>
-               <p className="text-xs leading-relaxed font-medium text-slate-400 mb-8 italic">"正在进行 DFM (面向制造的设计) 检查。当前圆角半径较大，注塑脱模率预估：优秀。"</p>
+               <p className="text-xs leading-relaxed font-medium text-slate-400 mb-8 italic">"DFM(面向制造的设计)检查需接入真实 CAE/模流引擎——当前为流程示意,不代表工艺结论。"</p>
                <div className="grid grid-cols-2 gap-4">
                   <div className="p-5 bg-white/5 rounded-3xl border border-white/5 text-center">
                      <div className="text-[9px] text-slate-500 font-black uppercase mb-1 tracking-widest">热负载预估</div>
