@@ -47,8 +47,8 @@ export default async function handler(req: any, res: any) {
       - Output MUST be valid JSON only.`;
 
   try {
-    const formattedHistory = history
-      .map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`)
+    const formattedHistory = (history || []).slice(-8)
+      .map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${String(h.text || '').slice(0, 400)}`)
       .join('\n');
 
     // F-03 根修:硬件清单从真实模块库动态生成(前端已随 state.library 传入),
@@ -79,6 +79,7 @@ ${catalog}
         systemInstruction: systemInstruction,
         // 504 修复:关闭 thinking(默认开启,叠加大目录+结构化 schema 常跑超 60s 函数上限)
         thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 2400, // 限制单轮生成时长,防超函数上限
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

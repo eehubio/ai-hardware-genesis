@@ -18,11 +18,16 @@ export const generateAIAssistance = async (prompt: string, state: ProjectState, 
           spec: typeof c.spec === 'string' ? c.spec.slice(0, 60) : ''
         })),
       };
+      // 超时根因修复:历史全量回传导致 prompt 随对话膨胀 → 只发最近 8 条纯文本(各≤400字)
+      const slimHistory = (history || []).slice(-8).map((h: any) => ({ role: h.role, text: String(h.text || '').slice(0, 400) }));
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 55000);
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, state: slimState, history })
-      });
+        body: JSON.stringify({ prompt, state: slimState, history: slimHistory }),
+        signal: ctrl.signal
+      }).finally(() => clearTimeout(timer));
       if (!res.ok) throw new Error(`Vercel status ${res.status}`);
       return await res.json();
     } catch (error) {

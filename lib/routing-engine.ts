@@ -94,7 +94,9 @@ export function routeAll(comps: CanvasComponent[], boxes: RBox[], bwMm: number, 
     jobs.push({ label: 'I2C 总线', kind: 'I2C', fromId: prev, toId: id });
     prev = id;
   }
-  for (const c of others) {
+  // 网络优先级:I2C 总线已优先入队;其余按 SPI > UART > GPIO(先布关键网络,占用最优走廊)
+  const PRIO: Record<string, number> = { SPI: 0, UART: 1, GPIO: 2 };
+  for (const c of [...others].sort((a, b) => PRIO[kindOf(a)] - PRIO[kindOf(b)])) {
     jobs.push({ label: kindOf(c), kind: kindOf(c), fromId: mcu.instanceId, toId: c.instanceId });
   }
 

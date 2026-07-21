@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ProjectState, CanvasComponent } from '../types';
-import { buildRuleStrategy, executePlacement, validateLayout, StrategyResult, RuleCheck } from '../lib/layout-engine';
+import { buildRuleStrategy, executePlacement, validateLayout, generateCandidates, suggestBoardSize, StrategyResult, RuleCheck } from '../lib/layout-engine';
 import { routeAll, RoutingResult } from '../lib/routing-engine';
 
 const FOOTPRINT_SCALE = 5;
@@ -158,65 +158,39 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     setAiLayoutText(null);
   };
 
-  // 算法自动布局:内置规则策略 + 引擎(确定性,可复现)
+  // 布局:纯算法 + 规则(按用户决策移除 AI 路径)。生成 3 个候选 Floorplan,默认应用评分最高者。
+  const [candidates, setCandidates] = useState<ReturnType<typeof generateCandidates>>([]);
+  const [activeCandidate, setActiveCandidate] = useState(0);
+  const applyCandidate = (cand: ReturnType<typeof generateCandidates>[number]) => {
+    const newPos: Record<string, { x: number, y: number }> = {};
+    cand.boxes.forEach(b => { newPos[b.instanceId] = { x: b.x * FOOTPRINT_SCALE, y: b.y * FOOTPRINT_SCALE }; });
+    setLocalPositions(newPos);
+    setState(prev => ({
+      ...prev,
+      components: prev.components.map(c => ({
+        ...c,
+        pcbX: newPos[c.instanceId]?.x ?? c.pcbX,
+        pcbY: newPos[c.instanceId]?.y ?? c.pcbY
+      }))
+    }));
+    setLayoutStrategy(cand.strategy);
+    setRuleChecks(cand.checks);
+    setAiLayoutText(null);
+  };
   const runAutoPlacer = () => {
-    if (isAutoPlacing || isAiPlacing) return;
+    if (isAutoPlacing) return;
     setIsAutoPlacing(true);
     try {
-      applyStrategy(buildRuleStrategy(state.components));
+      const cands = generateCandidates(state.components, state.pcbConstraints.width, state.pcbConstraints.height, 3);
+      setCandidates(cands);
+      setActiveCandidate(0);
+      applyCandidate(cands[0]);
     } finally {
       setIsAutoPlacing(false);
     }
   };
+  const boardAdvice = suggestBoardSize(state.components);
 
-  // AI 布局优化:AI 只出策略(分区+理由),坐标仍由引擎计算并校验;失败回退规则策略
-  const runAiPlacer = async () => {
-    if (isAiPlacing || isAutoPlacing) return;
-    setIsAiPlacing(true);
-    try {
-      const payload = {
-        board: { width: state.pcbConstraints.width, height: state.pcbConstraints.height },
-        modules: state.components.map(c => {
-          const fp = (c as any).isChipOnly ? (c as any).footprint : (c as any).moduleFootprint;
-          return {
-            instanceId: c.instanceId, name: c.name, type: c.type,
-            connectorType: c.physical?.connectorType,
-            protocols: c.electrical?.protocols || [],
-            currentDraw: c.electrical?.currentDraw,
-            w: fp?.width || 20, h: fp?.height || 20,
-          };
-        }),
-      };
-      const res = await fetch('/api/layout-strategy', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `status ${res.status}`);
-      // 合法性合并:AI 分区无效/缺失的模块回退到规则策略对应项
-      const baseline = buildRuleStrategy(state.components);
-      const VALID = new Set(['edge-n','edge-s','edge-e','edge-w','corner','center','any']);
-      const aiMap = new Map<string, any>((data.perModule || []).map((m: any) => [m.instanceId, m]));
-      const merged: StrategyResult = {
-        source: 'ai',
-        notes: Array.isArray(data.notes) ? data.notes.slice(0, 3) : [],
-        perModule: baseline.perModule.map(b => {
-          const ai = aiMap.get(b.instanceId);
-          return ai && VALID.has(ai.zone)
-            ? { instanceId: b.instanceId, zone: ai.zone, reason: String(ai.reason || '').slice(0, 60) }
-            : b;
-        }),
-      };
-      applyStrategy(merged);
-    } catch (e) {
-      // 诚实回退:AI 不可用就用规则策略,并明确告知
-      const fb = buildRuleStrategy(state.components);
-      fb.notes = ['⚠ AI 策略服务不可用,已使用内置规则策略(结果同「算法自动布局」)', ...fb.notes];
-      applyStrategy(fb);
-    } finally {
-      setIsAiPlacing(false);
-    }
-  };
 
   useEffect(() => {
     const initialPos: Record<string, { x: number, y: number }> = {};
@@ -483,15 +457,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
                 onClick={runAutoPlacer}
                 className="px-6 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-black shadow-lg hover:bg-slate-900 transition-all uppercase tracking-widest flex items-center gap-2"
               >
-                <span>{isAutoPlacing ? '布局计算中...' : '算法自动布局'}</span>
-              </button>
-              <button 
-                onClick={runAiPlacer}
-                disabled={isAiPlacing}
-                className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-900/40 hover:bg-indigo-700 transition-all uppercase tracking-widest flex items-center gap-2"
-              >
-                <div className={`w-2 h-2 rounded-full bg-white ${isAiPlacing ? 'animate-ping' : ''}`} />
-                <span>{isAiPlacing ? 'Gemini 布局中...' : 'AI 智能布局建议'}</span>
+                <span>{isAutoPlacing ? '布局计算中...' : '自动布局(规则引擎 · 3 候选)'}</span>
               </button>
               <button 
                 onClick={() => setState(p => ({ ...p, currentStep: 4 }))}
@@ -528,13 +494,31 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
             <>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-white uppercase tracking-widest">
-                  {layoutStrategy.source === 'ai' ? '🤖 AI 策略 + 算法执行' : '📐 规则策略 + 算法执行'}
+📐 规则引擎 Floorplan(连接器锁边 · 功能分区 · 净空/散热)
                 </span>
                 <button onClick={() => { setLayoutStrategy(null); setRuleChecks(null); }} className="text-slate-500 hover:text-white text-xs">✕</button>
               </div>
               {layoutStrategy.notes.map((n, i) => (
                 <p key={i} className="text-[10px] text-slate-300 leading-relaxed">{n}</p>
               ))}
+              {candidates.length > 1 && (
+                <div className="flex gap-1">
+                  {candidates.map((c, i) => (
+                    <button key={i}
+                      onClick={() => { setActiveCandidate(i); applyCandidate(c); }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold ${i === activeCandidate ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                      候选{'ABC'[c.variant]} · {c.score}分
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[10px] text-slate-400">
+                板框估算:模块占位 {boardAdvice.areaMm2}mm²,建议板框 ≥ {boardAdvice.w}×{boardAdvice.h}mm(利用率 {Math.round(boardAdvice.utilization * 100)}%)
+                {(state.pcbConstraints.width < boardAdvice.w || state.pcbConstraints.height < boardAdvice.h) && (
+                  <button onClick={() => setState(p => ({ ...p, pcbConstraints: { ...p.pcbConstraints, width: boardAdvice.w, height: boardAdvice.h } }))}
+                    className="ml-1 text-emerald-400 underline">应用建议尺寸</button>
+                )}
+              </p>
               <div className="space-y-1">
                 {layoutStrategy.perModule.map(s => {
                   const comp = state.components.find(c => c.instanceId === s.instanceId);

@@ -32,9 +32,9 @@ export function sizeOf(c: CanvasComponent): { w: number; h: number } {
 }
 
 /** 规则基线策略(AI 不可用时的回退,也是 AI 输出的合法性参照) */
-export function buildRuleStrategy(comps: CanvasComponent[]): StrategyResult {
+export function buildRuleStrategy(comps: CanvasComponent[], variant = 0): StrategyResult {
   const edges: Zone[] = ['edge-e', 'edge-s', 'edge-n', 'edge-w'];
-  let edgeIdx = 0;
+  let edgeIdx = variant; // 候选 Floorplan:不同变体从不同板边开始分配连接器
   const perModule: ModuleStrategy[] = comps.map(c => {
     if (isMcu(c)) {
       return hasRF(c)
@@ -49,7 +49,7 @@ export function buildRuleStrategy(comps: CanvasComponent[]): StrategyResult {
     if (isHot(c)) return { instanceId: c.instanceId, zone: 'edge-s', reason: `工作电流 ${numeric(c.electrical?.currentDraw)}mA → 贴边利于散热并远离敏感器件` };
     return { instanceId: c.instanceId, zone: 'any', reason: '无特殊约束,按走线最短就近主控' };
   });
-  return { perModule, source: 'rules', notes: ['策略由内置布局规则生成(连接器贴边/射频净空/发热分散/主控居中)'] };
+  return { perModule, source: 'rules', notes: [`Floorplan 变体 ${'ABC'[variant] || variant}:连接器锁定板边 · 功能就近分区 · 射频净空 · 发热分散 · 主控居中`] };
 }
 
 function zoneSeed(zone: Zone, i: number, n: number, bw: number, bh: number, w: number, h: number): { x: number; y: number } {
@@ -177,6 +177,27 @@ export function validateLayout(comps: CanvasComponent[], boxes: PlacedBox[], bw:
       : { rule: '发热分散', status: 'warn', detail: `大电流模块最小间距仅 ${minD.toFixed(1)}mm(建议 ≥${HOT_SPACING_MM}mm)` });
   }
 
+  // 4.5) 安装孔角落净空(四角 6mm 半径应无模块,便于打螺丝孔)
+  {
+    const R = 6;
+    const corners = [{ x: 0, y: 0 }, { x: bw, y: 0 }, { x: 0, y: bh }, { x: bw, y: bh }];
+    const blockers = boxes.filter(b => corners.some(c =>
+      !(b.x > c.x + R || b.x + b.w < c.x - R || b.y > c.y + R || b.y + b.h < c.y - R)));
+    out.push(blockers.length === 0
+      ? { rule: '安装孔净空', status: 'pass', detail: '四角 6mm 净空,可布置螺丝孔' }
+      : { rule: '安装孔净空', status: 'warn', detail: `${blockers.length} 个模块侵入角落净空区,螺丝孔需让位` });
+  }
+  // 4.6) 器件高度(供外壳/结构参考)
+  {
+    const hs = comps.map(c => ({ n: c.name, h: numeric((c.physical as any)?.dimensions?.depth) })).filter(x => x.h != null);
+    if (hs.length) {
+      const mx = hs.reduce((a, b) => (b.h! > a.h! ? b : a));
+      out.push({ rule: '器件高度', status: 'pass', detail: `最高 ${mx.h}mm(${mx.n.split(' ').slice(-2).join(' ')});${hs.length}/${comps.length} 个模块有高度数据,外壳内净空需 ≥ 最高值+PCB+铜柱` });
+    } else {
+      out.push({ rule: '器件高度', status: 'warn', detail: '所有模块均缺 dimensions.depth 数据,无法评估外壳净空 —— 请在模块库补充' });
+    }
+  }
+
   // 5) 走线经济(信息项)
   const mcu = comps.find(isMcu);
   if (mcu) {
@@ -187,5 +208,31 @@ export function validateLayout(comps: CanvasComponent[], boxes: PlacedBox[], bw:
       out.push({ rule: '走线经济', status: 'pass', detail: `外设到主控平均距离 ${avg.toFixed(1)}mm(越小越省走线)` });
     }
   }
+  return out;
+}
+
+/** 板框面积估算:模块占位总和 × 经验利用系数,给出建议最小板框 */
+export function suggestBoardSize(comps: CanvasComponent[]): { w: number; h: number; areaMm2: number; utilization: number } {
+  const areas = comps.map(c => { const s = sizeOf(c); return s.w * s.h; });
+  const sum = areas.reduce((a, b) => a + b, 0);
+  const UTIL = 0.45; // 模块级布局经验:占位面积 ≤ 板面积 45%(留走线/间隙/安装孔)
+  const target = sum / UTIL;
+  // 接近 5:4 的常用比例,取 5mm 圆整
+  const w = Math.max(40, Math.ceil(Math.sqrt(target * 1.25) / 5) * 5);
+  const h = Math.max(30, Math.ceil((target / w) / 5) * 5);
+  return { w, h, areaMm2: Math.round(sum), utilization: UTIL };
+}
+
+/** 生成 N 个候选 Floorplan 并按校验评分排序(pass=+2, warn=-1, 走线经济做次级) */
+export function generateCandidates(comps: CanvasComponent[], bw: number, bh: number, n = 3) {
+  const out: { variant: number; strategy: StrategyResult; boxes: PlacedBox[]; checks: RuleCheck[]; score: number }[] = [];
+  for (let v = 0; v < n; v++) {
+    const strategy = buildRuleStrategy(comps, v);
+    const boxes = executePlacement(comps, strategy, bw, bh);
+    const checks = validateLayout(comps, boxes, bw, bh);
+    const score = checks.reduce((s, c) => s + (c.status === 'pass' ? 2 : -1), 0);
+    out.push({ variant: v, strategy, boxes, checks, score });
+  }
+  out.sort((a, b) => b.score - a.score || a.variant - b.variant);
   return out;
 }
