@@ -1,220 +1,219 @@
+import React, { useMemo } from 'react';
+import { ProjectState, CanvasComponent, ClipDecision } from '../types';
+import { composeFirmware } from '../lib/firmware-composer';
 
-import React, { useState, useEffect } from 'react';
-import { ProjectState, CanvasComponent } from '../types';
+/**
+ * C:硬件剪裁(重写版)
+ * 旧版为纯剧本演示(假进度条/假日志/关键词假建议),已整体移除。
+ * 本版为确定性分析:
+ *  - 门禁:必须先在固件构建页「确认固件」(且组件集未变)
+ *  - 代码实现状态:来自固件拼装器(库内片段/内置参考/未实现)
+ *  - 器件级数据:来自 KiCad 导入的 pcbIR(无数据的模块如实说明,不编造)
+ *  - 输出为「建议」,一切取舍由工程师逐模块确认
+ */
 
-interface ClippingOption {
-  instanceId: string;
-  name: string;
-  recommendation: 'keep_module' | 'chip_only' | 'remove';
-  reason: string;
-  detectedFunctions: string[];
+const REG_RE = /1117|662k|ldo|regul|dc-?dc|buck|ams|xc62|rt9013|me6211|tps7|mp15|ap21/i;
+const isConnector = (c: { designator: string; category?: string }) =>
+  (c.category || '').toLowerCase().includes('connector') || /^(J|CN|X|P)\d/i.test(c.designator || '');
+const isRegulator = (c: { designator?: string; value?: string; category?: string }) =>
+  (c.category || '').toLowerCase().includes('power') || REG_RE.test(c.value || '');
+
+interface ModuleAnalysis {
+  comp: CanvasComponent;
+  codeStatus: 'db' | 'builtin' | 'todo' | 'mcu';
+  hasKicad: boolean;
+  partsTotal: number;
+  connectors: number;
+  regulators: number;
+  castellated: boolean;
+  recommended: ClipDecision;
+  reasons: string[];
 }
 
 const HardwareClippingView: React.FC<{ state: ProjectState; setState: React.Dispatch<React.SetStateAction<ProjectState>> }> = ({ state, setState }) => {
-  const [url, setUrl] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [clippingOptions, setClippingOptions] = useState<ClippingOption[]>([]);
-  const [analysisLogs, setAnalysisLogs] = useState<string[]>([]);
+  const comps = state.components;
+  const ids = comps.map(c => c.id).sort().join(',');
+  const fc = state.firmwareConfirmed;
+  const confirmValid = !!fc && fc.componentIds.slice().sort().join(',') === ids;
 
-  const startAnalysis = () => {
-    if (!url) return;
-    setIsAnalyzing(true);
-    setProgress(0);
-    setAnalysisLogs([]);
-    
-    const logs = [
-      "Connecting to GitHub API...",
-      "Cloning repository: " + url.split('/').pop(),
-      "Scanning Abstract Syntax Tree...",
-      "Analyzing peripheral drivers and pin-muxing...",
-      "AI: Detecting active I2C addresses (0x76, 0x3C)...",
-      "Logic Check: Evaluating schematic redundancy...",
-      "Strategy: Switching BME280 and OLED to CHIP level."
-    ];
-
-    let currentLog = 0;
-    const interval = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) {
-          clearInterval(interval);
-          generateOptions();
-          return 100;
-        }
-        if (p % 15 < 1) {
-          setAnalysisLogs(prev => [...prev, logs[currentLog % logs.length]]);
-          currentLog++;
-        }
-        return p + 2;
-      });
-    }, 40);
-  };
-
-  const generateOptions = () => {
-    const options: ClippingOption[] = state.components.map(comp => {
-      const isMcu = comp.type === 'mcu';
-      if (isMcu) return {
-        instanceId: comp.instanceId,
-        name: comp.name,
-        recommendation: 'keep_module',
-        reason: "XIAO Core module is essential for connectivity.",
-        detectedFunctions: ["UART0", "WiFi", "I2C"]
-      };
-
-      const name = comp.name.toLowerCase();
-      const isUsed = name.includes('bme') || name.includes('oled') || name.includes('sgp');
-      const isPower = comp.type === 'power';
-
-      return {
-        instanceId: comp.instanceId,
-        name: comp.name,
-        recommendation: isUsed ? 'chip_only' : (isPower ? 'keep_module' : 'remove'),
-        reason: isUsed 
-          ? `Code base has active driver for ${comp.name}. Optimization: CHIP-level integration.` 
-          : (isPower ? "Power management required for battery usage." : "No software reference found. Recommended for removal."),
-        detectedFunctions: isUsed ? ["Sensors", "Display"] : []
-      };
+  const analyses: ModuleAnalysis[] = useMemo(() => {
+    if (!confirmValid) return [];
+    const composed = composeFirmware(comps, fc!.lang);
+    return comps.map(comp => {
+      const isMcu = comp.type === 'mcu' || comp.type === 'processor';
+      const src = isMcu ? 'mcu' : (composed.modules.find(m => m.id === comp.id)?.source || 'todo');
+      const parts = (comp as any).pcbIR?.components as { designator: string; value: string; category: string }[] | undefined;
+      const hasKicad = Array.isArray(parts) && parts.length > 0;
+      const connectors = hasKicad ? parts!.filter(isConnector).length : 0;
+      const regulators = hasKicad ? parts!.filter(isRegulator).length : 0;
+      const castellated = comp.physical?.connectorType === 'Castellated';
+      const reasons: string[] = [];
+      let recommended: ClipDecision = 'full';
+      if (isMcu) {
+        recommended = 'full';
+        reasons.push(castellated ? '主控为邮票孔核心板,可直接贴装到量产板' : '主控建议整模块保留');
+      } else if (src === 'todo') {
+        recommended = 'remove';
+        reasons.push('确认固件中该模块无任何驱动代码(未实现)——如确属未用,建议移除;如需保留请先补代码再重新确认固件');
+      } else if (hasKicad) {
+        recommended = 'core';
+        reasons.push(`KiCad 数据:共 ${parts!.length} 个器件,其中连接器 ${connectors} 个、稳压 ${regulators} 路 —— 提取核心可去除连接器与冗余电源`);
+      } else {
+        recommended = 'full';
+        reasons.push('无 KiCad 工程数据,无法给出器件级清单 —— 暂建议整模块;导入该模块 KiCad 工程后可解锁「提取核心」分析');
+      }
+      if (!isMcu && !castellated && (comp.clipDecision ?? recommended) === 'full') {
+        reasons.push(`⚠ ${comp.physical?.connectorType || '该'}连接形态不可直接焊接到量产板 —— 整模块保留仅适合原型阶段`);
+      }
+      return { comp, codeStatus: src as any, hasKicad, partsTotal: hasKicad ? parts!.length : 0, connectors, regulators, castellated, recommended, reasons };
     });
-    setClippingOptions(options);
-    setIsAnalyzing(false);
+  }, [comps, confirmValid, fc]);
+
+  const setDecision = (instanceId: string, d: ClipDecision) => {
+    setState(p => ({ ...p, components: p.components.map(c => c.instanceId === instanceId ? { ...c, clipDecision: d } : c) }));
   };
 
-  const toggleClipping = (instanceId: string, mode: 'module' | 'chip') => {
-    setState(prev => ({
-      ...prev,
-      components: prev.components.map(c => 
-        c.instanceId === instanceId ? { ...c, isChipOnly: mode === 'chip' } : c
-      )
-    }));
-  };
+  // ===== 聚合建议(仅统计有数据的模块,覆盖率如实标注)=====
+  const agg = useMemo(() => {
+    const active = analyses.filter(a => (a.comp.clipDecision ?? a.recommended) !== 'remove');
+    const withData = active.filter(a => a.hasKicad);
+    const totalReg = withData.reduce((s, a) => s + a.regulators, 0);
+    const coreChosen = analyses.filter(a => (a.comp.clipDecision ?? a.recommended) === 'core' && a.hasKicad);
+    const removableConn = coreChosen.reduce((s, a) => s + a.connectors, 0);
+    const removedCnt = analyses.filter(a => (a.comp.clipDecision ?? a.recommended) === 'remove').length;
+    return { activeCnt: active.length, dataCnt: withData.length, totalReg, removableConn, removedCnt };
+  }, [analyses]);
 
-  const removeUnused = (instanceId: string) => {
-    setState(prev => ({
-      ...prev,
-      components: prev.components.filter(c => c.instanceId !== instanceId)
-    }));
-    setClippingOptions(prev => prev.filter(o => o.instanceId !== instanceId));
-  };
+  // ===== 门禁 =====
+  if (comps.length === 0) {
+    return (
+      <div className="flex-1 h-full flex items-center justify-center p-10">
+        <div className="text-center max-w-sm space-y-3">
+          <div className="text-4xl">🔩</div>
+          <div className="text-h3 text-ink-900 font-bold">硬件剪裁需要先有方案</div>
+          <p className="text-body text-ink-500">画布为空。请先在「原型设计」完成方案搭建与固件确认。</p>
+        </div>
+      </div>
+    );
+  }
+  if (!confirmValid) {
+    return (
+      <div className="flex-1 h-full flex items-center justify-center p-10">
+        <div className="text-center max-w-md space-y-3">
+          <div className="text-4xl">🔒</div>
+          <div className="text-h3 text-ink-900 font-bold">先确认固件,再做剪裁</div>
+          <p className="text-body text-ink-500 leading-relaxed">
+            剪裁依据是「最终确认的代码里到底用了哪些模块」。
+            {fc ? '组件方案在确认固件后发生了变化,请回固件页重新确认。' : '请在原型设计 → 固件构建 页完成代码并点击「✅ 确认固件」。'}
+            未经确认的代码不能作为器件取舍依据 —— 这是流程门禁,不是故障。
+          </p>
+          <button
+            onClick={() => setState(p => ({ ...p, mode: 'PROTOTYPE' as any, currentStep: 2 }))}
+            className="px-5 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-semibold hover:bg-brand-700">
+            前往固件构建
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  const finalizeClipping = () => {
-    setState(prev => ({ ...prev, currentStep: 2 }));
+  const decisionMeta: Record<ClipDecision, { label: string; cls: string }> = {
+    full: { label: '整模块保留', cls: 'border-sky-500 text-sky-700 bg-sky-50' },
+    core: { label: '提取核心器件', cls: 'border-emerald-500 text-emerald-700 bg-emerald-50' },
+    remove: { label: '移除', cls: 'border-red-400 text-red-600 bg-red-50' },
   };
-
-  // If we are not currently analyzing and haven't generated results, show the main UI
-  const showInputArea = !isAnalyzing && clippingOptions.length === 0;
+  const codeBadge: Record<string, { t: string; cls: string }> = {
+    mcu: { t: '主控', cls: 'bg-ink-800 text-white' },
+    db: { t: '代码:库内片段', cls: 'bg-emerald-100 text-emerald-700' },
+    builtin: { t: '代码:内置参考', cls: 'bg-slate-200 text-slate-600' },
+    todo: { t: '代码:未实现', cls: 'bg-amber-100 text-amber-700' },
+  };
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0f14] text-slate-300 overflow-hidden font-sans">
-      <div className="p-10 pb-6 shrink-0 bg-gradient-to-b from-slate-900/50 to-transparent">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-4xl font-black text-white tracking-tight flex items-center gap-4">
-              <span className="p-2 bg-green-500/10 rounded-2xl border border-green-500/20 text-2xl">✂️</span>
-              硬件裁剪与封装优化
-            </h2>
-            <p className="text-slate-500 mt-2 font-medium max-w-xl">基于软件定义硬件（SDH）技术，根据您的固件代码自动压缩电路面积。</p>
-          </div>
-          {clippingOptions.length > 0 && !isAnalyzing && (
-            <button 
-              onClick={finalizeClipping}
-              className="px-10 py-4 bg-green-600 text-white rounded-[24px] text-sm font-black shadow-2xl hover:bg-green-700 transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
-            >
-              <span>确认剪裁并进入 PCB 布局</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-            </button>
+    <div className="flex-1 h-full overflow-y-auto p-5 space-y-4">
+      <div>
+        <h2 className="text-h2 font-black text-ink-900">硬件剪裁 <span className="text-meta font-mono text-ink-400 ml-2">CLIP &amp; MERGE</span></h2>
+        <p className="text-body text-ink-500 mt-0.5">
+          基于已确认固件({fc!.lang === 'arduino' ? 'Arduino' : 'MicroPython'} · {new Date(fc!.at).toLocaleString()})与模块 KiCad 数据的<b>建议清单</b> —— 最终取舍由工程师逐项确认。
+        </p>
+      </div>
+
+      {/* 聚合建议 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="p-3 bg-white border border-ink-200 rounded-eng-lg">
+          <div className="text-meta text-ink-400 font-bold uppercase">保留模块</div>
+          <div className="text-h3 font-black text-ink-900">{agg.activeCnt} <span className="text-meta text-ink-400">/ {analyses.length}</span></div>
+          <div className="text-meta text-ink-500 mt-0.5">{agg.removedCnt > 0 ? `${agg.removedCnt} 个标记移除` : '无移除项'}</div>
+        </div>
+        <div className="p-3 bg-white border border-ink-200 rounded-eng-lg">
+          <div className="text-meta text-ink-400 font-bold uppercase">电源合并建议</div>
+          {agg.dataCnt === 0 ? (
+            <div className="text-body text-ink-500 mt-1">无器件数据,无法分析</div>
+          ) : agg.totalReg >= 2 ? (
+            <>
+              <div className="text-h3 font-black text-emerald-600">{agg.totalReg} → 1</div>
+              <div className="text-meta text-ink-500 mt-0.5">检出 {agg.totalReg} 路稳压,合并保留 1 路(电压等级需人工确认)</div>
+            </>
+          ) : (
+            <div className="text-body text-ink-600 mt-1">检出 {agg.totalReg} 路稳压,无合并空间</div>
           )}
         </div>
-
-        {showInputArea && (
-          <div className="max-w-4xl mx-auto py-16">
-            <div className="bg-slate-900/50 border-2 border-slate-800 p-12 rounded-[50px] shadow-3xl text-center">
-               <div className="flex justify-center mb-8">
-                 <div className="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center text-4xl shadow-inner border border-slate-700">📦</div>
-               </div>
-               <h3 className="text-2xl font-black text-white mb-4">输入 GitHub 仓库链接</h3>
-               <p className="text-slate-400 mb-10 max-w-lg mx-auto leading-relaxed text-sm">我们会分析您的 firmware 源码（Arduino/Python），识别哪些外设模块可以被裁剪为芯片级封装以节省空间。</p>
-               
-               <div className="flex flex-col md:flex-row gap-4">
-                  <input 
-                    type="text" 
-                    placeholder="https://github.com/username/project-repo"
-                    className="flex-1 bg-black border-2 border-slate-800 rounded-[28px] px-8 py-6 text-green-400 font-mono text-lg focus:border-green-500/50 transition-all outline-none"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                  <button 
-                    onClick={startAnalysis}
-                    disabled={!url || isAnalyzing}
-                    className="px-12 py-6 bg-white text-black rounded-[28px] text-sm font-black uppercase tracking-widest hover:bg-green-400 transition-all disabled:opacity-20 shadow-xl"
-                  >
-                    开始代码扫描
-                  </button>
-               </div>
-            </div>
-          </div>
-        )}
+        <div className="p-3 bg-white border border-ink-200 rounded-eng-lg">
+          <div className="text-meta text-ink-400 font-bold uppercase">可移除连接器</div>
+          <div className="text-h3 font-black text-ink-900">{agg.removableConn}</div>
+          <div className="text-meta text-ink-500 mt-0.5">来自选择「提取核心」的模块</div>
+        </div>
+        <div className="p-3 bg-white border border-ink-200 rounded-eng-lg">
+          <div className="text-meta text-ink-400 font-bold uppercase">器件数据覆盖</div>
+          <div className="text-h3 font-black text-ink-900">{agg.dataCnt} <span className="text-meta text-ink-400">/ {analyses.length}</span></div>
+          <div className="text-meta text-ink-500 mt-0.5">无数据模块可导入 KiCad 工程解锁</div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 pb-10">
-        {isAnalyzing && (
-          <div className="max-w-4xl mx-auto mt-10 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-black text-green-400 tracking-widest uppercase">AI 编译器解析中...</div>
-              <div className="text-xl font-mono text-white">{progress}%</div>
-            </div>
-            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.6)] transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-            <div className="bg-black/60 border border-slate-800 p-8 rounded-[32px] font-mono text-[11px] h-64 overflow-y-auto">
-              {analysisLogs.map((log, i) => (
-                <div key={i} className="flex gap-4 mb-2">
-                  <span className="text-slate-600 select-none">[{i.toString().padStart(3, '0')}]</span>
-                  <span className="text-green-500/90">{log}</span>
-                </div>
-              ))}
-              <div className="animate-pulse text-green-400">▍</div>
-            </div>
-          </div>
-        )}
-
-        {clippingOptions.length > 0 && !isAnalyzing && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
-            {clippingOptions.map((opt) => {
-              const comp = state.components.find(c => c.instanceId === opt.instanceId);
-              if (!comp) return null;
-              
-              return (
-                <div key={opt.instanceId} className={`group p-8 bg-slate-900 border-2 transition-all rounded-[40px] flex flex-col gap-6 ${opt.recommendation === 'remove' ? 'border-rose-500/20 opacity-60' : 'border-slate-800 hover:border-green-500/40'}`}>
-                  <div className="flex gap-6 items-center">
-                    <div className="w-20 h-20 bg-black rounded-2xl flex items-center justify-center p-3 border border-slate-800">
-                      <img src={comp.thumb} className="max-w-full max-h-full object-contain" />
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <h4 className="text-lg font-black text-white truncate mb-1">{comp.name}</h4>
-                      <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase inline-block ${opt.recommendation === 'chip_only' ? 'bg-indigo-500/20 text-indigo-400' : opt.recommendation === 'remove' ? 'bg-rose-500/20 text-rose-400' : 'bg-green-500/20 text-green-400'}`}>
-                        {opt.recommendation.replace('_', ' ')}
-                      </div>
-                    </div>
+      {/* 逐模块决策 */}
+      <div className="space-y-2.5">
+        {analyses.map(a => {
+          const current = a.comp.clipDecision ?? a.recommended;
+          return (
+            <div key={a.comp.instanceId} className="p-3.5 bg-white border border-ink-200 rounded-eng-lg">
+              <div className="flex items-start gap-3">
+                <img src={a.comp.thumb} className="w-10 h-10 object-contain rounded border border-ink-100 bg-white shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-body font-bold text-ink-900">{a.comp.name}</span>
+                    <span className={`text-meta px-1.5 py-0.5 rounded-eng font-bold ${codeBadge[a.codeStatus].cls}`}>{codeBadge[a.codeStatus].t}</span>
+                    {a.castellated && <span className="text-meta px-1.5 py-0.5 rounded-eng bg-sky-100 text-sky-700 font-bold">邮票孔可贴装</span>}
+                    {a.hasKicad
+                      ? <span className="text-meta text-ink-400 font-mono">{a.partsTotal} 器件 · {a.connectors} 连接器 · {a.regulators} 稳压</span>
+                      : <span className="text-meta text-ink-400">无 KiCad 器件数据</span>}
                   </div>
-
-                  <p className="text-[11px] text-slate-400 font-medium leading-relaxed italic h-12 overflow-hidden">"{opt.reason}"</p>
-                  
-                  <div className="flex items-center justify-between pt-2">
-                    {opt.recommendation === 'remove' ? (
-                      <button onClick={() => removeUnused(opt.instanceId)} className="w-full py-3 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl text-[10px] font-black hover:bg-rose-600 hover:text-white transition-all">剔除冗余器件</button>
-                    ) : (
-                      <div className="flex w-full bg-black/60 p-1 rounded-2xl border border-slate-800">
-                        <button onClick={() => toggleClipping(opt.instanceId, 'module')} className={`flex-1 py-2 rounded-xl text-[9px] font-black transition-all ${!comp.isChipOnly ? 'bg-slate-800 text-white' : 'text-slate-500'}`}>模块级</button>
-                        <button onClick={() => toggleClipping(opt.instanceId, 'chip')} className={`flex-1 py-2 rounded-xl text-[9px] font-black transition-all ${comp.isChipOnly ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>芯片级</button>
-                      </div>
-                    )}
-                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {a.reasons.map((r, i) => <li key={i} className="text-meta text-ink-500 leading-snug">· {r}</li>)}
+                  </ul>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="flex gap-1.5 shrink-0">
+                  {(['full', 'core', 'remove'] as ClipDecision[]).map(d => {
+                    const disabled = d === 'core' && !a.hasKicad && a.codeStatus !== 'mcu';
+                    return (
+                      <button key={d}
+                        disabled={disabled}
+                        title={disabled ? '该模块无 KiCad 器件数据,无法生成核心器件清单' : (d === a.recommended ? '系统建议' : '')}
+                        onClick={() => setDecision(a.comp.instanceId, d)}
+                        className={`px-2.5 py-1.5 text-meta font-bold rounded-eng border transition-colors ${current === d ? decisionMeta[d].cls : 'border-ink-200 text-ink-400 hover:border-ink-400'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                        {decisionMeta[d].label}{d === a.recommended ? ' ★' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      <p className="text-meta text-ink-400 leading-relaxed">
+        ★ = 系统建议 · 决策随项目保存。「提取核心」的具体器件保留清单依赖各模块 KiCad 子电路提取(网络与 BOM 数据已就位,精细到"哪个电阻必须留"的自动分析在后续版本提供);当前版本给出模块级取舍与连接器/电源冗余合并方向。
+      </p>
     </div>
   );
 };

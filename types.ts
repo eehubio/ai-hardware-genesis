@@ -86,6 +86,7 @@ export interface HardwareComponent {
 }
 
 export interface CanvasComponent extends HardwareComponent {
+  clipDecision?: ClipDecision; // C:剪裁决策(随组件持久化)
   instanceId: string;
   x: number;
   y: number;
@@ -152,6 +153,9 @@ export interface Artifact {
   version: string;
 }
 
+export type ClipDecision = 'full' | 'core' | 'remove';
+export interface FirmwareConfirm { at: number; componentIds: string[]; lang: 'arduino' | 'micropython'; }
+
 export interface ProjectState {
   mode: WorkflowMode;
   currentStep: number;
@@ -171,4 +175,5 @@ export interface ProjectState {
   library: HardwareComponent[]; 
   categories: string[];
   pastedImages?: { id: string, url: string, x: number, y: number, width: number }[];
+  firmwareConfirmed?: FirmwareConfirm | null; // C:硬件剪裁的前置门禁
 }

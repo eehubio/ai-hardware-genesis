@@ -87,6 +87,21 @@ const FirmwareView: React.FC<{ state: ProjectState; setState: React.Dispatch<Rea
                 <button onClick={() => {setLang('micropython'); setIsEdited(false);}} className={`px-4 py-2 rounded-eng text-body font-semibold transition-colors ${lang === 'micropython' ? 'bg-brand-600 text-white' : 'text-ink-400 hover:text-white'}`}>MicroPython</button>
              </div>
              <button onClick={() => {setIsEdited(false); setCurrentCode(composed.code);}} className="px-4 py-2 bg-ink-800 text-ink-300 rounded-eng text-body font-semibold hover:bg-ink-700 border border-ink-700 transition-colors">重新生成</button>
+             {(() => {
+               const ids = state.components.map(c => c.id).sort().join(',');
+               const fc = state.firmwareConfirmed;
+               const valid = !!fc && fc.componentIds.slice().sort().join(',') === ids && fc.lang === lang;
+               return valid ? (
+                 <span className="px-3 py-2 text-body font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-700 rounded-eng">✅ 固件已确认 · 可进行硬件剪裁</span>
+               ) : (
+                 <button
+                   onClick={() => setState(p => ({ ...p, firmwareConfirmed: { at: Date.now(), componentIds: p.components.map(c => c.id), lang } }))}
+                   title="确认当前固件功能完整可用 —— 这是进入硬件剪裁的前置条件"
+                   className="px-4 py-2 bg-emerald-600 text-white rounded-eng text-body font-semibold hover:bg-emerald-700 transition-colors">
+                   ✅ 确认固件
+                 </button>
+               );
+             })()}
              <button 
                 onClick={() => setState(p => ({ ...p, currentStep: 3 }))}
                 className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700 transition-colors flex items-center gap-1.5"
