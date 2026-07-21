@@ -79,7 +79,7 @@ ${catalog}
         systemInstruction: systemInstruction,
         // 504 修复:关闭 thinking(默认开启,叠加大目录+结构化 schema 常跑超 60s 函数上限)
         thinkingConfig: { thinkingBudget: 0 },
-        maxOutputTokens: 2400, // 限制单轮生成时长,防超函数上限
+        maxOutputTokens: 8192, // 上限护栏(2400 会截断结构化 JSON 导致解析 500;超时根因已由历史裁剪+关thinking解决)
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
