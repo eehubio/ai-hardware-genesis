@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { WorkflowMode, ProjectState, CanvasComponent, Connection, AIAgentMessage, Artifact, HardwareComponent } from './types';
+import { RequirementsMap, RequirementOption, WorkflowMode, ProjectState, CanvasComponent, Connection, AIAgentMessage, Artifact, HardwareComponent } from './types';
 import { PROTOTYPE_STEPS, PCB_STEPS, SEEED_MODULE_LIBRARY_IR } from './constants';
 import { getDatabaseComponents } from './services/dbService';
 import { fetchModuleLibrary } from './services/apiService';
@@ -131,6 +131,28 @@ const App: React.FC = () => {
   const [aiHistory, setAiHistory] = useState<AIAgentMessage[]>([
     { id: '1', role: 'assistant', text: '欢迎来到 Seeed AI 智造平台。我是您的项目架构师。您可以告诉我您的设计目标（例如：制作一个自动浇花系统），我会为您推荐硬件方案。' }
   ]);
+
+  // ===== F-05:需求状态机(结构化决策 + 互斥约束)=====
+  const [requirements, setRequirements] = useState<RequirementsMap>({});
+  const recordDecision = useCallback((opt: RequirementOption) => {
+    const dimension = opt.dimension || 'other';
+    const value = opt.value || opt.label;
+    const d = { dimension, value, label: opt.label, decidedAt: Date.now() };
+    setRequirements(prev => {
+      const list = prev[dimension] || [];
+      if (opt.exclusive) return { ...prev, [dimension]: [d] }; // 单选维度:替换,不叠加
+      if (list.some(x => x.value === value)) return prev;      // 多选维度:去重追加
+      return { ...prev, [dimension]: [...list, d] };
+    });
+  }, []);
+  const removeDecision = useCallback((dimension: string, value: string) => {
+    setRequirements(prev => {
+      const list = (prev[dimension] || []).filter(x => x.value !== value);
+      const next = { ...prev };
+      if (list.length) next[dimension] = list; else delete next[dimension];
+      return next;
+    });
+  }, []);
   // ===== F-14 修复:项目状态持久化(刷新不再丢方案) =====
   const PERSIST_KEY = 'genesis_project_v1';
   // 恢复:仅白名单字段;library/categories 始终由云端拉取,不持久化
@@ -154,6 +176,9 @@ const App: React.FC = () => {
       if (Array.isArray(saved?.aiHistory) && saved.aiHistory.length > 0) {
         setAiHistory(saved.aiHistory);
       }
+      if (saved?.requirements && typeof saved.requirements === 'object') {
+        setRequirements(saved.requirements);
+      }
     } catch { /* 损坏的存档直接忽略 */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -168,6 +193,7 @@ const App: React.FC = () => {
           pcbConstraints: state.pcbConstraints, artifacts: state.artifacts, status: state.status,
         },
         aiHistory: aiHistory.slice(-50),
+        requirements,
       };
       try {
         localStorage.setItem(PERSIST_KEY, JSON.stringify(payload));
@@ -178,7 +204,7 @@ const App: React.FC = () => {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [state.mode, state.currentStep, state.components, state.connections, state.pcbConstraints, state.artifacts, state.status, aiHistory]);
+  }, [state.mode, state.currentStep, state.components, state.connections, state.pcbConstraints, state.artifacts, state.status, aiHistory, requirements]);
 
   const resetProject = () => {
     if (!window.confirm('确定重置项目?画布、对话与进度将清空(模块库不受影响)。')) return;
@@ -341,6 +367,9 @@ const App: React.FC = () => {
         {!leftPanelCollapsed && (
           <ErrorBoundary scope="app">
           <Sidebar 
+            requirements={requirements}
+            onDecide={recordDecision}
+            onRemoveDecision={removeDecision}
             mode={state.mode} 
             state={state} 
             setState={setState} 

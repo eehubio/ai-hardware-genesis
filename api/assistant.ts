@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
          - Keep the conversation interactive and step-by-step.
          - Do not suggest full systems immediately. Instead, ask 1 to 2 key questions about their target application, preferred communication protocols (WiFi/BLE/LoRa), sensor requirements, power supply constraints, or user interface preference (screen/web/relay).
          - In this questioning/exploration stage, your "cards" array should NOT have "solutionComponents" with actual hardware IDs. Set "solutionComponents: []" (empty array) or omit it. This prevents the UI from displaying "应用完整系统方案" or "应用此子方案" buttons too early. Keep card type as "info" or "warn" to provide hints or explanation.
-         - ALWAYS provide 2 to 4 concise option strings in the "options" array reflecting potential responses (e.g., ["需要屏幕显示", "不需要屏幕", "支持WiFi与手机通信", "采用本地音频报警"]). These options will be displayed as clickable buttons for the user to answer with one-click. Make them short (under 12 Chinese characters).
+         - ALWAYS provide 2 to 4 structured options in the "options" array. Each option = {label(中文≤12字), dimension, value, exclusive}. dimension ∈ [mcu, display, sensing, connectivity, power, audio, input, enclosure, other]. exclusive=true when the dimension is single-choice (display type, mcu, power source, connectivity) so mutually exclusive choices REPLACE each other; exclusive=false for stackable features (sensing capabilities). Options in the same question about the same single-choice dimension MUST share the same dimension and exclusive=true.
       3. ONLY when the user's requirements are clearly defined (typically after 2-3 turns of dialogue, or if they explicitly ask "直接给我推荐方案", "不用问了请输出列表", "直接出方案吧"), THEN generate and suggest the concrete set of component IDs.
          - During this recommendation stage, "options" can be empty or empty list.
       4. When recommending a final solution, ALWAYS include EXACTLY ONE MCU in the solution.
@@ -37,16 +37,13 @@ export default async function handler(req: any, res: any) {
          - 📚 **所需技术基础 (Required Tech Skills)**: Level of experience needed (e.g., basic C/C++ programming, basic electronics/wiring concept).
          - ⏱️ **预计项目工时 (Estimated Project Time)**: An realistic estimate of how long this project takes to fully assemble, code, and test (e.g., 2-4 hours, 1 day, depending on complexity).
       
-      Available Library IDs:
-      - MCUs: xiao_esp32s3, xiao_nrf52840_sense, xiao_rp2040
-      - Sensors: bme280, sht40, sgp40, lis3dhtr, gps_air530, grove_vision_ai_v2, ultrasonic, pir_sensor, light_sensor, soil_moisture
-      - Displays: oled_096, lcd_rgb_backlight
-      - Actuators: relay, buzzer, rotary_encoder, led_chainable, lora_e5
+      Hardware catalog: the LIVE catalog is provided in the user message ("Available Hardware Catalog"). ONLY use ids from it — never this outdated list, never invent ids.
       
       Response Format:
       - Return a friendly, professional explanation in Chinese ('text').
       - In 'cards', provide helpful high-level summary cards (e.g., '准备步骤', '核心思路', '当前选择'). Only include actual component IDs in 'solutionComponents' when ready to recommend the final system.
-      - In 'options', provide 2 to 4 quick action choices for the user. Keep them short, clean, and contextually matching your questions.
+      - In 'options', provide structured {label, dimension, value, exclusive} objects per the rules above.
+      - REQUIREMENT STATE MACHINE: the user message includes "Confirmed requirements". NEVER re-ask a dimension that already has a confirmed decision. Every solution MUST respect all confirmed decisions. If the user's new input contradicts a confirmed decision, treat it as an intentional change, acknowledge it, and proceed with the new value.
       - Output MUST be valid JSON only.`;
 
   try {
@@ -63,7 +60,10 @@ export default async function handler(req: any, res: any) {
 
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Available Hardware Catalog (LIVE database, format: id | name | type | brief):
+      contents: `Confirmed requirements (state machine; do NOT re-ask these dimensions, solutions MUST respect them):
+${JSON.stringify(Object.fromEntries(Object.entries((state.requirements || {}) as Record<string, any[]>).map(([k, v]) => [k, (v || []).map((d: any) => d.label)])))}
+
+Available Hardware Catalog (LIVE database, format: id | name | type | brief):
 ${catalog}
 
       STRICT RULE: solutionComponents may ONLY contain ids from the catalog above (first column, exact match). Never invent ids. If no suitable module exists in the catalog for a needed function, say so explicitly in text instead of substituting.
@@ -105,8 +105,17 @@ ${catalog}
             },
             options: {
               type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "2 to 4 quick action options in Chinese for the user to select. Representing common, concise responses to the current question (e.g. ['有屏幕需求', '无需屏幕']). Make them very short and clickable."
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING, description: "中文按钮文字,≤12 字" },
+                  dimension: { type: Type.STRING, description: "mcu|display|sensing|connectivity|power|audio|input|enclosure|other" },
+                  value: { type: Type.STRING, description: "机器可读值,如 oled_096 / wifi / battery" },
+                  exclusive: { type: Type.BOOLEAN, description: "该维度是否单选(互斥)" }
+                },
+                required: ['label']
+              },
+              description: "2 to 4 structured quick options; mutually exclusive choices share a dimension with exclusive=true."
             }
           },
           required: ['text', 'cards']

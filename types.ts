@@ -101,12 +101,22 @@ export interface Connection {
   busType: 'I2C' | 'SPI' | 'GPIO' | 'UART' | 'POWER';
 }
 
+// ===== F-05 需求状态机 =====
+export interface RequirementOption {
+  label: string;
+  dimension?: string;   // mcu/display/sensing/connectivity/power/audio/input/enclosure/other
+  value?: string;       // 机器可读值,缺省用 label
+  exclusive?: boolean;  // true=该维度单选(新选择替换旧的)
+}
+export interface RequirementDecision { dimension: string; value: string; label: string; decidedAt: number; }
+export type RequirementsMap = Record<string, RequirementDecision[]>;
+
 export interface AIAgentMessage {
   id: string;
   role: 'assistant' | 'user';
   text: string;
   cards?: ExplainCard[];
-  options?: string[]; // Clickable multiple-choice options for step-by-step discovery
+  options?: (string | RequirementOption)[]; // 选项:字符串(旧)或带维度的结构化选项(F-05)
 }
 
 export interface ExplainCard {

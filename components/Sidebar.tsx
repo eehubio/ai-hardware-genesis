@@ -6,6 +6,9 @@ import { getDatabaseComponents, saveDatabaseComponent, resetDatabaseToDefaults }
 import AIAssistant from './AIAssistant';
 
 interface SidebarProps {
+  requirements: import('../types').RequirementsMap;
+  onDecide: (opt: import('../types').RequirementOption) => void;
+  onRemoveDecision: (dimension: string, value: string) => void;
   mode: WorkflowMode;
   state: ProjectState;
   setState: React.Dispatch<React.SetStateAction<ProjectState>>;
@@ -25,8 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onAISend,
   onApplySolution,
   isProcessing,
-  onCollapse
-}) => {
+  onCollapse, requirements, onDecide, onRemoveDecision }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'assistant'>('library');
   const [filter, setFilter] = useState<string | 'all'>('all');
   const [showDbModal, setShowDbModal] = useState(false);
@@ -375,6 +377,9 @@ const Sidebar: React.FC<SidebarProps> = ({
       {activeTab === 'assistant' ? (
         <div className="flex-1 overflow-hidden">
           <AIAssistant
+            requirements={requirements}
+            onDecide={onDecide}
+            onRemoveDecision={onRemoveDecision}
             history={aiHistory}
             onSend={onAISend}
             onApplySolution={onApplySolution}

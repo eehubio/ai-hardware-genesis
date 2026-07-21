@@ -39,19 +39,49 @@ const URL_TEMPLATES = [
   }
 ];
 
+const DIM_LABELS: Record<string, string> = { mcu: '主控', display: '显示', sensing: '传感', connectivity: '通信', power: '供电', audio: '音频', input: '输入', enclosure: '结构', other: '其他' };
+const optOf = (o: any): { label: string; dimension: string; value: string; exclusive: boolean } => {
+  if (typeof o === 'string') return { label: o, dimension: 'other', value: o, exclusive: false };
+  return { label: o.label, dimension: o.dimension || 'other', value: o.value || o.label, exclusive: !!o.exclusive };
+};
+
 interface AIAssistantProps {
   history: AIAgentMessage[];
+  requirements: import('../types').RequirementsMap;
+  onDecide: (opt: import('../types').RequirementOption) => void;
+  onRemoveDecision: (dimension: string, value: string) => void;
   onSend: (text: string) => void;
   onApplySolution: (ids: string[]) => void;
   isProcessing: boolean;
   inline?: boolean;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolution, isProcessing, inline = false }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ history, requirements, onDecide, onRemoveDecision, onSend, onApplySolution, isProcessing, inline = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const latestOptionsMsgId = [...history].reverse().find(m => m.role === 'assistant' && m.options && m.options.length > 0)?.id;
+  const decidedValues = new Set(Object.values(requirements).flat().map(d => d.value));
+  const renderRequirementsPanel = () => {
+    const dims = Object.entries(requirements);
+    if (dims.length === 0) return null;
+    return (
+      <div className="px-3 py-2 bg-emerald-50/70 border-b border-emerald-100">
+        <div className="text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1">✅ 已确认需求(约束后续方案)</div>
+        <div className="flex flex-wrap gap-1">
+          {dims.map(([dim, list]) => list.map(d => (
+            <span key={dim + d.value} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white border border-emerald-200 rounded-full text-[10px] text-slate-700">
+              <span className="text-emerald-600 font-bold">{DIM_LABELS[dim] || dim}</span>
+              {d.label}
+              <button onClick={() => onRemoveDecision(dim, d.value)} className="text-slate-300 hover:text-red-500 font-bold" title="撤销该决策">×</button>
+            </span>
+          )))}
+        </div>
+      </div>
+    );
+  };
+
 
   // States for doc/pdf/image uploads and URL inputs
   const [attachedFile, setAttachedFile] = useState<{
@@ -380,6 +410,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
              </span>
           </div>
         </form>
+          {renderRequirementsPanel()}
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-220px)] bg-slate-50/30">
           {history.map((msg) => {
@@ -402,6 +433,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
 
                   {msg.role === 'assistant' && msg.options && msg.options.length > 0 && (() => {
                     const selectedForThisMsg = selectedOptions[msg.id] || [];
+                    const optsStale = msg.id !== latestOptionsMsgId;
                     return (
                       <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-col gap-2 animate-fade-in">
                         <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold">
@@ -413,21 +445,27 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                         
                         <div className="flex flex-wrap gap-1">
                           {msg.options.map((option, idx) => {
-                            const isSelected = selectedForThisMsg.includes(option);
+                            const isSelected = selectedForThisMsg.includes(option as any);
+                            const oNorm = optOf(option);
+                            const isDecided = decidedValues.has(oNorm.value);
                             return (
                               <button
                                 key={idx}
-                                disabled={isProcessing}
+                                disabled={isProcessing || optsStale}
                                 onClick={() => {
-                                  if (!isProcessing) {
-                                    setSelectedOptions(prev => {
-                                      const current = prev[msg.id] || [];
-                                      const updated = current.includes(option)
-                                        ? current.filter(o => o !== option)
-                                        : [...current, option];
-                                      return { ...prev, [msg.id]: updated };
-                                    });
-                                  }
+                                  if (isProcessing || optsStale) return;
+                                  const o = optOf(option);
+                                  const wasSelected = selectedForThisMsg.includes(option as any);
+                                  setSelectedOptions(prev => {
+                                    const current = prev[msg.id] || [];
+                                    const updated = wasSelected
+                                      ? current.filter(x => x !== option)
+                                      : [...current, option as any];
+                                    return { ...prev, [msg.id]: updated };
+                                  });
+                                  // F-05:同步写入需求状态机(互斥维度自动替换旧决策)
+                                  if (wasSelected) onRemoveDecision(o.dimension, o.value);
+                                  else onDecide(o);
                                 }}
                                 className={`px-2 py-1 text-[10px] font-semibold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
                                   isSelected
@@ -440,7 +478,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
                                   </svg>
                                 )}
-                                {option}
+                                {isDecided ? '✓ ' : ''}{oNorm.label}
                               </button>
                             );
                           })}
@@ -448,10 +486,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
 
                         {selectedForThisMsg.length > 0 && (
                           <button
-                            disabled={isProcessing}
+                            disabled={isProcessing || optsStale}
                             onClick={() => {
                               if (!isProcessing) {
-                                onSend(selectedForThisMsg.join(' + '));
+                                onSend(selectedForThisMsg.map((x: any) => optOf(x).label).join(' + '));
                                 setSelectedOptions(prev => {
                                   const next = { ...prev };
                                   delete next[msg.id];
@@ -770,6 +808,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                </span>
             </div>
           </form>
+          {renderRequirementsPanel()}
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
             {history.map((msg) => {
@@ -793,6 +832,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
 
                     {msg.role === 'assistant' && msg.options && msg.options.length > 0 && (() => {
                       const selectedForThisMsg = selectedOptions[msg.id] || [];
+                    const optsStale = msg.id !== latestOptionsMsgId;
                       return (
                         <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3 animate-fade-in">
                           <div className="flex items-center justify-between text-[11px] text-slate-400 font-bold">
@@ -804,21 +844,26 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                           
                           <div className="flex flex-wrap gap-2">
                             {msg.options.map((option, idx) => {
-                              const isSelected = selectedForThisMsg.includes(option);
+                              const isSelected = selectedForThisMsg.includes(option as any);
+                            const oNorm = optOf(option);
+                            const isDecided = decidedValues.has(oNorm.value);
                               return (
                                 <button
                                   key={idx}
-                                  disabled={isProcessing}
+                                  disabled={isProcessing || optsStale}
                                   onClick={() => {
-                                    if (!isProcessing) {
-                                      setSelectedOptions(prev => {
-                                        const current = prev[msg.id] || [];
-                                        const updated = current.includes(option)
-                                          ? current.filter(o => o !== option)
-                                          : [...current, option];
-                                        return { ...prev, [msg.id]: updated };
-                                      });
-                                    }
+                                    if (isProcessing || optsStale) return;
+                                    const o = optOf(option);
+                                    const wasSelected = selectedForThisMsg.includes(option as any);
+                                    setSelectedOptions(prev => {
+                                      const current = prev[msg.id] || [];
+                                      const updated = wasSelected
+                                        ? current.filter(x => x !== option)
+                                        : [...current, option as any];
+                                      return { ...prev, [msg.id]: updated };
+                                    });
+                                    if (wasSelected) onRemoveDecision(o.dimension, o.value);
+                                    else onDecide(o);
                                   }}
                                   className={`px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
                                     isSelected
@@ -831,7 +876,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
                                     </svg>
                                   )}
-                                  {option}
+                                  {isDecided ? '✓ ' : ''}{oNorm.label}
                                 </button>
                               );
                             })}
@@ -839,10 +884,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, onSend, onApplySolut
 
                           {selectedForThisMsg.length > 0 && (
                             <button
-                              disabled={isProcessing}
+                              disabled={isProcessing || optsStale}
                               onClick={() => {
                                 if (!isProcessing) {
-                                  onSend(selectedForThisMsg.join(' + '));
+                                  onSend(selectedForThisMsg.map((x: any) => optOf(x).label).join(' + '));
                                   // Clear selection for this msg after sending to prevent accidental double-submits
                                   setSelectedOptions(prev => {
                                     const next = { ...prev };

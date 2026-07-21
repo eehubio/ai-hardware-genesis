@@ -12,6 +12,7 @@ export const generateAIAssistance = async (prompt: string, state: ProjectState, 
         currentStep: (state as any).currentStep,
         mode: (state as any).mode,
         components: (state.components || []).map((c: any) => ({ id: c.id, name: c.name, type: c.type })),
+        requirements: (state as any).requirements || {},
         library: (state.library || []).map((c: any) => ({
           id: c.id, name: c.name, type: c.type,
           spec: typeof c.spec === 'string' ? c.spec.slice(0, 60) : ''
