@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ProjectState, CanvasComponent } from '../types';
 import { buildRuleStrategy, executePlacement, validateLayout, StrategyResult, RuleCheck } from '../lib/layout-engine';
+import { routeAll, RoutingResult } from '../lib/routing-engine';
 
 const FOOTPRINT_SCALE = 5;
 const SAFE_MARGIN_MM = 2;
@@ -17,6 +18,8 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
   const [aiLayoutText, setAiLayoutText] = useState<string | null>(null);
   const [layoutStrategy, setLayoutStrategy] = useState<StrategyResult | null>(null);
   const [ruleChecks, setRuleChecks] = useState<RuleCheck[] | null>(null);
+  const [routing, setRouting] = useState<RoutingResult | null>(null);
+  const [routeStale, setRouteStale] = useState(false);
   
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -251,24 +254,8 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     
     // 我们将同步全局状态的逻辑移到底部的 useEffect 中，避免在渲染时调用 setState
 
-    // 2. 处理布线阶段的动画逻辑
-    if (isRouting) {
-      setProgress(0); 
-      setIsDone(false);
-      const intervalId = setInterval(() => {
-        setProgress(p => {
-          if (p >= 100) { 
-            clearInterval(intervalId); 
-            setIsDone(true); 
-            return 100; 
-          }
-          return p + 5;
-        });
-      }, 30);
-      return () => clearInterval(intervalId);
-    } else {
-      setIsDone(true);
-    }
+    // 布线阶段无假进度动画 —— 就绪即就绪,布线由用户显式触发
+    setIsDone(true);
   }, [state.components.length, boardW, boardH, isRouting]);
 
   const handleMouseDown = (e: React.MouseEvent, id?: string, isImage?: boolean) => {
@@ -426,46 +413,26 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     };
   }, [handleMouseMove, handleMouseUp, state.components, setState, localPositions]);
 
-  const routingPaths = useMemo(() => {
-    if (!isRouting || !isDone) return [];
-    const mcu = state.components.find(c => c.type === 'mcu');
-    if (!mcu) return [];
-    const paths: any[] = [];
-    const peripherals = state.components.filter(c => c.type !== 'mcu');
-
-    peripherals.forEach((p, pIdx) => {
-      const spec = p.spec.toLowerCase();
-      const pinInfo = spec.includes('i2c') ? { pins: ['GND', 'VCC', 'SDA', 'SCL'], mcuPins: ['GND', '3V3', 'D4', 'D5'] } :
-                     spec.includes('spi') ? { pins: ['GND', 'VCC', 'SCK', 'MISO', 'MOSI', 'CS'], mcuPins: ['GND', '3V3', 'D10', 'D9', 'D8', 'D3'] } :
-                     spec.includes('uart') ? { pins: ['GND', 'VCC', 'TX', 'RX'], mcuPins: ['GND', '3V3', 'D6', 'D7'] } :
-                     { pins: ['GND', 'VCC', 'SIG'], mcuPins: ['GND', '3V3', `D${pIdx % 4}`] };
-
-      const mcuPos = localPositions[mcu.instanceId];
-      const pPos = localPositions[p.instanceId];
-      if (!mcuPos || !pPos) return;
-
-      const mcuFp = mcu.isChipOnly ? mcu.footprint : mcu.moduleFootprint;
-      const pFp = p.isChipOnly ? p.footprint : p.moduleFootprint;
-      if (!mcuFp || !pFp) return;
-
-      (pinInfo?.pins || []).forEach((pinName, pinIdx) => {
-        const mcuPinName = pinInfo.mcuPins[pinIdx];
-        const mcuPin = (mcuFp?.pins || []).find(fp => fp.name === mcuPinName || (mcuPinName === 'GND' && fp.name === 'GND') || (mcuPinName === '3V3' && (fp.name === '3V3' || fp.name === 'VCC')));
-        const pPin = (pFp?.pins || []).find(fp => fp.name === pinName || (pinName === 'VCC' && (fp.name === '3V3' || fp.name === 'VCC')) || (pinName === 'GND' && fp.name === 'GND'));
-        if (mcuPin && pPin) {
-          const from = { x: mcuPos.x + mcuPin.x * FOOTPRINT_SCALE, y: mcuPos.y + mcuPin.y * FOOTPRINT_SCALE };
-          const to = { x: pPos.x + pPin.x * FOOTPRINT_SCALE, y: pPos.y + pPin.y * FOOTPRINT_SCALE };
-          const midX = (from.x + to.x) / 2 + (pIdx * 8) - (pinIdx * 2);
-          paths.push({
-            d: `M ${from.x} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.x} ${to.y}`,
-            color: pinName === 'GND' ? '#475569' : (pinName === 'VCC' || pinName === '3V3' ? '#ef4444' : '#fbbf24'),
-            opacity: (pinName === 'GND' || pinName === 'VCC') ? 0.3 : 0.85
-          });
-        }
+  // E:曼哈顿 A* 避障布线(示意级)。位置变动后结果标记过期,需重新布线。
+  const runRouter = () => {
+    const boxes = state.components
+      .filter(c => localPositions[c.instanceId])
+      .map(c => {
+        const fp = (c as any).isChipOnly ? (c as any).footprint : (c as any).moduleFootprint;
+        return {
+          instanceId: c.instanceId,
+          x: localPositions[c.instanceId].x / FOOTPRINT_SCALE,
+          y: localPositions[c.instanceId].y / FOOTPRINT_SCALE,
+          w: fp?.width || 20,
+          h: fp?.height || 20,
+        };
       });
-    });
-    return paths;
-  }, [isRouting, isDone, localPositions, state.components]);
+    const result = routeAll(state.components, boxes, state.pcbConstraints.width, state.pcbConstraints.height);
+    setRouting(result);
+    setRouteStale(false);
+  };
+  useEffect(() => { if (routing) setRouteStale(true); }, [localPositions]); // 拖动后过期
+  const NET_COLORS: Record<string, string> = { I2C: '#3b82f6', SPI: '#a855f7', UART: '#eab308', GPIO: '#22c55e' };
 
   const renderFootprint = (comp: CanvasComponent, index: number) => {
     const footprint = comp.isChipOnly ? comp.footprint : comp.moduleFootprint;
@@ -498,11 +465,15 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
         <div className="pointer-events-auto">
           <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
             {isRouting ? 'AI 物理布线' : 'AI 布局优化'}
-            {isDone && isRouting && <span className="px-3 py-1 bg-green-500/10 text-green-500 text-[9px] rounded-full border border-green-500/20 font-black animate-pulse uppercase tracking-widest">Router Solved</span>}
+            {isRouting && routing && (
+              <span className={`px-3 py-1 text-[9px] rounded-full border font-black uppercase tracking-widest ${routeStale ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20'}`}>
+                {routeStale ? '位置已变 · 布线过期' : `已布 ${routing.stats.routed} 网络 · ${routing.stats.crossings} 交叉${routing.stats.fallbacks ? ` · ${routing.stats.fallbacks} 未避障` : ''} · ${routing.stats.totalLenMm}mm`}
+              </span>
+            )}
           </h2>
           <p className="text-xs text-green-400/40 font-medium mt-1">
             支持滚轮缩放与中键平移。拖拽组件进行精细布局。
-            <span className="ml-4 text-green-500 font-bold tracking-widest underline underline-offset-4 decoration-2">强制 2MM 间距已生效</span>
+            {isRouting && <span className="ml-4 text-slate-500">示意级布线:验证连通走廊,非 DRC 级(无线宽/间距/过孔规则),交叉处实际制板需换层</span>}
           </p>
         </div>
         <div className="flex gap-3 pointer-events-auto">
@@ -530,6 +501,14 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
               </button>
             </>
+          )}
+          {isRouting && (
+            <button
+              onClick={runRouter}
+              className="px-6 py-2.5 bg-slate-800 text-white rounded-xl text-xs font-black shadow-lg hover:bg-slate-900 transition-all uppercase tracking-widest flex items-center gap-2"
+            >
+              <span>{routing ? (routeStale ? '重新布线' : '重跑布线') : '自动布线(曼哈顿避障)'}</span>
+            </button>
           )}
           {isRouting && isDone && (
             <button 
@@ -626,10 +605,19 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
                       >✕</button>
                     </div>
                   ))}
-                 {isRouting && isDone && (
-                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ mixBlendMode: 'screen' }}>
-                      {routingPaths.map((path, idx) => (
-                        <path key={idx} d={path.d} stroke={path.color} strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: path.opacity }} />
+                 {isRouting && routing && (
+                   <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ mixBlendMode: 'screen', opacity: routeStale ? 0.25 : 1 }}>
+                      {routing.nets.map((net, idx) => (
+                        <polyline
+                          key={idx}
+                          points={net.path.map(p => `${p.x * FOOTPRINT_SCALE},${p.y * FOOTPRINT_SCALE}`).join(' ')}
+                          stroke={NET_COLORS[net.kind]}
+                          strokeWidth={net.kind === 'I2C' ? 2 : 1.4}
+                          strokeDasharray={net.fallback ? '6 4' : undefined}
+                          fill="none" strokeLinecap="round" strokeLinejoin="round"
+                        >
+                          <title>{net.label}{net.fallback ? '(未能避障,虚线示意)' : ''}{net.crossings ? ` · ${net.crossings} 交叉` : ''}</title>
+                        </polyline>
                       ))}
                    </svg>
                  )}
