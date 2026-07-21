@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ProjectState, CanvasComponent } from '../types';
-import { generatePCBlayout } from '../services/geminiService';
+import { buildRuleStrategy, executePlacement, validateLayout, StrategyResult, RuleCheck } from '../lib/layout-engine';
 
 const FOOTPRINT_SCALE = 5;
 const SAFE_MARGIN_MM = 2;
@@ -15,6 +15,8 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
   const [isResizing, setIsResizing] = useState(false);
   const [isAiPlacing, setIsAiPlacing] = useState(false);
   const [aiLayoutText, setAiLayoutText] = useState<string | null>(null);
+  const [layoutStrategy, setLayoutStrategy] = useState<StrategyResult | null>(null);
+  const [ruleChecks, setRuleChecks] = useState<RuleCheck[] | null>(null);
   
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
@@ -131,116 +133,84 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     return { x: currentX, y: currentY, w, h };
   };
 
-  // 执行自动布局
+  // D:布局管线 —— 策略(AI 或规则)→ 引擎落位(mm)→ 规则校验 → 应用(px)
+  const applyStrategy = (strategy: StrategyResult) => {
+    const bwMm = state.pcbConstraints.width;
+    const bhMm = state.pcbConstraints.height;
+    const boxes = executePlacement(state.components, strategy, bwMm, bhMm);
+    const checks = validateLayout(state.components, boxes, bwMm, bhMm);
+    const newPos: Record<string, { x: number, y: number }> = {};
+    boxes.forEach(b => { newPos[b.instanceId] = { x: b.x * FOOTPRINT_SCALE, y: b.y * FOOTPRINT_SCALE }; });
+    setLocalPositions(newPos);
+    setState(prev => ({
+      ...prev,
+      components: prev.components.map(c => ({
+        ...c,
+        pcbX: newPos[c.instanceId]?.x ?? c.pcbX,
+        pcbY: newPos[c.instanceId]?.y ?? c.pcbY
+      }))
+    }));
+    setLayoutStrategy(strategy);
+    setRuleChecks(checks);
+    setAiLayoutText(null);
+  };
+
+  // 算法自动布局:内置规则策略 + 引擎(确定性,可复现)
   const runAutoPlacer = () => {
     if (isAutoPlacing || isAiPlacing) return;
     setIsAutoPlacing(true);
-    setProgress(0);
-    
-    const finalNewPos: Record<string, { x: number, y: number }> = {};
-    const placedRects: {x: number, y: number, w: number, h: number}[] = [];
-    
-    // 1. 先放置主控 MCU
-    const mcu = state.components.find(c => c.type === 'mcu');
-    if (mcu) {
-      const size = getCompSize(mcu);
-      const pos = { x: SAFE_MARGIN_PX * 3, y: (boardH - size.h) / 2 };
-      finalNewPos[mcu.instanceId] = pos;
-      placedRects.push({ ...pos, ...size });
+    try {
+      applyStrategy(buildRuleStrategy(state.components));
+    } finally {
+      setIsAutoPlacing(false);
     }
-
-    // 2. 依次放置其他外设，避免起点完全重合
-    state.components.filter(c => c.type !== 'mcu').forEach((comp, idx) => {
-      const mcuRect = placedRects[0];
-      // 给不同的组件不同的初始“建议位置”，避免在同一个圆点堆叠搜索
-      const idealX = mcuRect ? mcuRect.x + mcuRect.w + SAFE_MARGIN_PX * 5 : 120;
-      const idealY = 40 + (idx * 50) % (boardH - 80);
-      
-      const safePos = findSafePosition(comp, placedRects, idealX, idealY);
-      finalNewPos[comp.instanceId] = { x: safePos.x, y: safePos.y };
-      placedRects.push(safePos);
-    });
-
-    const interval = setInterval(() => {
-      setProgress(p => {
-        if (p >= 100) {
-          clearInterval(interval);
-          setLocalPositions(finalNewPos);
-          setState(prev => ({
-            ...prev,
-            components: prev.components.map(c => ({
-              ...c,
-              pcbX: finalNewPos[c.instanceId]?.x ?? c.pcbX,
-              pcbY: finalNewPos[c.instanceId]?.y ?? c.pcbY
-            }))
-          }));
-          setIsAutoPlacing(false);
-          return 100;
-        }
-        return p + 10;
-      });
-    }, 30);
   };
 
+  // AI 布局优化:AI 只出策略(分区+理由),坐标仍由引擎计算并校验;失败回退规则策略
   const runAiPlacer = async () => {
     if (isAiPlacing || isAutoPlacing) return;
     setIsAiPlacing(true);
-    setAiLayoutText("AI 正在计算最佳电气间距与热分布布局...");
-    
-    // 增加一个强制超时，防止卡死
-    const timeoutId = setTimeout(() => {
-      if (isAiPlacing) {
-        setIsAiPlacing(false);
-        setAiLayoutText("AI 响应超时，请重试。");
-      }
-    }, 20000);
-
     try {
-      const result = await generatePCBlayout(state).catch(e => {
-        console.error(e);
-        return null;
+      const payload = {
+        board: { width: state.pcbConstraints.width, height: state.pcbConstraints.height },
+        modules: state.components.map(c => {
+          const fp = (c as any).isChipOnly ? (c as any).footprint : (c as any).moduleFootprint;
+          return {
+            instanceId: c.instanceId, name: c.name, type: c.type,
+            connectorType: c.physical?.connectorType,
+            protocols: c.electrical?.protocols || [],
+            currentDraw: c.electrical?.currentDraw,
+            w: fp?.width || 20, h: fp?.height || 20,
+          };
+        }),
+      };
+      const res = await fetch('/api/layout-strategy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-
-      if (result && result.layout) {
-        clearTimeout(timeoutId);
-        setAiLayoutText(result.text);
-        const newPos: Record<string, { x: number, y: number }> = {};
-        const placedRects: {x: number, y: number, w: number, h: number}[] = [];
-        
-        // 按照类型和 ID 稳定排序
-        const sortedComps = [...state.components].sort((a, b) => {
-          if (a.type === 'mcu') return -1;
-          if (b.type === 'mcu') return 1;
-          return a.instanceId.localeCompare(b.instanceId);
-        });
-
-        sortedComps.forEach((comp) => {
-          const aiPos = result.layout[comp.instanceId];
-          const idealX = (aiPos?.x !== undefined ? aiPos.x : 20) * FOOTPRINT_SCALE;
-          const idealY = (aiPos?.y !== undefined ? aiPos.y : 20) * FOOTPRINT_SCALE;
-
-          // 强制经过避障算法，确保 AI 建议即便有重叠也会被修正
-          const safePos = findSafePosition(comp, placedRects, idealX, idealY);
-          newPos[comp.instanceId] = { x: safePos.x, y: safePos.y };
-          placedRects.push(safePos);
-        });
-
-        setLocalPositions(newPos);
-        setState(prev => ({
-          ...prev,
-          components: prev.components.map(c => ({
-            ...c,
-            pcbX: newPos[c.instanceId]?.x ?? c.pcbX,
-            pcbY: newPos[c.instanceId]?.y ?? c.pcbY
-          }))
-        }));
-      } else {
-        setAiLayoutText("AI 建议暂时不可用，已为您恢复基础布局。");
-      }
-    } catch (error) {
-      setAiLayoutText("AI 服务忙碌，请稍后再试。");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `status ${res.status}`);
+      // 合法性合并:AI 分区无效/缺失的模块回退到规则策略对应项
+      const baseline = buildRuleStrategy(state.components);
+      const VALID = new Set(['edge-n','edge-s','edge-e','edge-w','corner','center','any']);
+      const aiMap = new Map<string, any>((data.perModule || []).map((m: any) => [m.instanceId, m]));
+      const merged: StrategyResult = {
+        source: 'ai',
+        notes: Array.isArray(data.notes) ? data.notes.slice(0, 3) : [],
+        perModule: baseline.perModule.map(b => {
+          const ai = aiMap.get(b.instanceId);
+          return ai && VALID.has(ai.zone)
+            ? { instanceId: b.instanceId, zone: ai.zone, reason: String(ai.reason || '').slice(0, 60) }
+            : b;
+        }),
+      };
+      applyStrategy(merged);
+    } catch (e) {
+      // 诚实回退:AI 不可用就用规则策略,并明确告知
+      const fb = buildRuleStrategy(state.components);
+      fb.notes = ['⚠ AI 策略服务不可用,已使用内置规则策略(结果同「算法自动布局」)', ...fb.notes];
+      applyStrategy(fb);
     } finally {
-      clearTimeout(timeoutId);
       setIsAiPlacing(false);
     }
   };
@@ -573,18 +543,45 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
         </div>
       </div>
 
-      {aiLayoutText && !isRouting && (
-        <div className="absolute top-24 left-8 right-8 z-[60] pointer-events-none">
-          <div className="max-w-xl bg-indigo-900/90 backdrop-blur-md border border-indigo-500/30 p-4 rounded-2xl shadow-2xl pointer-events-auto animate-in slide-in-from-top-4 duration-500">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-indigo-500 rounded-xl flex items-center justify-center text-white text-xs shrink-0">AI</div>
-              <div className="flex-1">
-                <div className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Layout Strategy</div>
-                <p className="text-[11px] text-white leading-relaxed">{aiLayoutText}</p>
+      {(layoutStrategy || aiLayoutText) && !isRouting && (
+        <div className="absolute top-20 right-4 w-80 max-h-[60vh] overflow-y-auto bg-slate-900/95 backdrop-blur rounded-2xl p-4 shadow-2xl pointer-events-auto space-y-3">
+          {layoutStrategy && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-white uppercase tracking-widest">
+                  {layoutStrategy.source === 'ai' ? '🤖 AI 策略 + 算法执行' : '📐 规则策略 + 算法执行'}
+                </span>
+                <button onClick={() => { setLayoutStrategy(null); setRuleChecks(null); }} className="text-slate-500 hover:text-white text-xs">✕</button>
               </div>
-              <button onClick={() => setAiLayoutText(null)} className="text-indigo-300 hover:text-white">✕</button>
-            </div>
-          </div>
+              {layoutStrategy.notes.map((n, i) => (
+                <p key={i} className="text-[10px] text-slate-300 leading-relaxed">{n}</p>
+              ))}
+              <div className="space-y-1">
+                {layoutStrategy.perModule.map(s => {
+                  const comp = state.components.find(c => c.instanceId === s.instanceId);
+                  return (
+                    <div key={s.instanceId} className="text-[10px] text-slate-300 leading-snug">
+                      <span className="text-white font-bold">{comp?.name.split(' ').slice(-2).join(' ')}</span>
+                      <span className="ml-1 px-1 py-0.5 bg-slate-700 rounded text-[9px] font-mono">{s.zone}</span>
+                      <span className="ml-1 text-slate-400">{s.reason}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {ruleChecks && (
+                <div className="pt-2 border-t border-slate-700 space-y-1">
+                  <div className="text-[10px] font-black text-white uppercase tracking-widest">规则校验</div>
+                  {ruleChecks.map((c, i) => (
+                    <div key={i} className={`text-[10px] leading-snug ${c.status === 'pass' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {c.status === 'pass' ? '✓' : '⚠'} <b>{c.rule}</b>:{c.detail}
+                    </div>
+                  ))}
+                  <p className="text-[9px] text-slate-500 pt-1">⚠ 项不阻塞流程 —— 可拖拽微调后重看(重新点布局按钮刷新校验)</p>
+                </div>
+              )}
+            </>
+          )}
+          {aiLayoutText && <p className="text-[11px] text-white leading-relaxed">{aiLayoutText}</p>}
         </div>
       )}
 
