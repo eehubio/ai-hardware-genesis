@@ -11,6 +11,7 @@ export default async function handler(req: any, res: any) {
     const ai = new GoogleGenAI({ apiKey });
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
+      config: { thinkingConfig: { thinkingBudget: 0 } },
       contents: `Current Language: ${lang}
 Hardware List (with real protocols from database): ${JSON.stringify(peripherals)}
 Current Code:\n\`\`\`\n${currentCode}\n\`\`\`\n

@@ -77,6 +77,8 @@ ${catalog}
       New User Input: ${prompt}`,
       config: {
         systemInstruction: systemInstruction,
+        // 504 修复:关闭 thinking(默认开启,叠加大目录+结构化 schema 常跑超 60s 函数上限)
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

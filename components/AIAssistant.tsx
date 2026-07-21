@@ -63,6 +63,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, requirements, onDeci
   const scrollRef = useRef<HTMLDivElement>(null);
   const latestOptionsMsgId = [...history].reverse().find(m => m.role === 'assistant' && m.options && m.options.length > 0)?.id;
   const decidedValues = new Set(Object.values(requirements).flat().map(d => d.value));
+  useEffect(() => {
+    if (input === '') {
+      document.querySelectorAll<HTMLTextAreaElement>('textarea[data-autosize]').forEach(el => { el.style.height = 'auto'; });
+    }
+  }, [input]);
   const renderRequirementsPanel = () => {
     const dims = Object.entries(requirements);
     if (dims.length === 0) return null;
@@ -384,12 +389,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, requirements, onDeci
 
           <div className="relative group">
             <textarea
+              data-autosize
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as any)?.requestSubmit(); } }}
-              rows={Math.min(6, Math.max(1, input.split('\n').length + (input.length > 40 ? 1 : 0)))}
-              placeholder={(attachedFile || attachedUrl) ? "输入补充词或直接点击发送设计！" : "例如：设计一个空气质量检测仪(Shift+Enter 换行)"}
-              className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-3 pr-9 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-green-500/15 focus:border-green-500 transition-all shadow-sm outline-none resize-none"
+              rows={1}
+              placeholder={(attachedFile || attachedUrl) ? "输入补充词或直接点击发送设计！" : "例如：设计一个空气质量检测仪"}
+              className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-3 pr-9 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-green-500/15 focus:border-green-500 transition-all shadow-sm outline-none resize-none overflow-hidden"
             />
             <button 
               type="submit"
@@ -786,11 +792,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ history, requirements, onDeci
               <textarea 
                  
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => { setInput(e.target.value); const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }}
                 placeholder={(attachedFile || attachedUrl) ? "输入补充词或直接点击发送设计！" : "尝试输入：设计一个空气质量检测仪"}
-                className="w-full bg-white border border-slate-200 rounded-[18px] py-3 pl-5 pr-12 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all shadow-sm outline-none resize-none"
+                className="w-full bg-white border border-slate-200 rounded-[18px] py-3 pl-5 pr-12 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all shadow-sm outline-none resize-none overflow-hidden"
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as any)?.requestSubmit(); } }}
-                rows={Math.min(6, Math.max(1, input.split('\n').length + (input.length > 60 ? 1 : 0)))} />
+                rows={1} />
               <button 
                 type="submit"
                 disabled={isProcessing}
