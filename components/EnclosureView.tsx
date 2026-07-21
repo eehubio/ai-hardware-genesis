@@ -297,6 +297,27 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
     return boxes;
   }, [mappedComponents, pcbW, pcbH]);
 
+  // B1 闭环:开孔核对清单 —— 由模块清单推导(不从 AI 图片量取,图片只作对照参考)
+  const openingChecklist = useMemo(() => {
+    const items: { key: string; label: string; basis: string }[] = [];
+    state.components.forEach(c => {
+      if (c.type === 'display') items.push({ key: `win_${c.instanceId}`, label: `屏幕开窗(${c.name.split(' ').slice(-2).join(' ')})`, basis: '顶面,对照概念图中屏幕位置' });
+      if (c.type === 'audio' || /speaker|扬声|buzzer|蜂鸣/i.test(c.name)) items.push({ key: `snd_${c.instanceId}`, label: `出音孔阵(${c.name.split(' ').slice(-2).join(' ')})`, basis: '对照概念图中格栅位置' });
+      if (c.type === 'mcu' || c.type === 'processor') items.push({ key: `usb_${c.instanceId}`, label: 'USB 烧录/供电口', basis: '侧面,对照概念图 USB 开口' });
+      if (c.type === 'sensor' && /温|湿|气|voc|air|env/i.test(c.name + (c.spec || ''))) items.push({ key: `vent_${c.instanceId}`, label: `采样通风孔(${c.name.split(' ').slice(-2).join(' ')})`, basis: '环境类传感器需与外界连通' });
+      if (c.type === 'input' || /button|按钮|encoder|编码/i.test(c.name)) items.push({ key: `btn_${c.instanceId}`, label: `操作件开孔(${c.name.split(' ').slice(-2).join(' ')})`, basis: '对照概念图按键/旋钮位置' });
+    });
+    return items;
+  }, [state.components]);
+  const toggleOpening = (key: string) => {
+    setState(p => {
+      if (!p.conceptDesign) return p;
+      const cur = p.conceptDesign.checkedOpenings || [];
+      const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
+      return { ...p, conceptDesign: { ...p.conceptDesign, checkedOpenings: next } };
+    });
+  };
+
   // 外壳自动适配:按真实模块占位 + 间隙求外框;高度按最高模块 + PCB + 铜柱 + 盖内净空
   const autoFitShell = () => {
     if (!arrangedComponents.length) return;
@@ -988,6 +1009,38 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
           </div>
         )}
       </div>
+      {!floating && state.conceptDesign && (
+        <div className="w-full mt-2 p-3 bg-emerald-50/70 border border-emerald-200 rounded-eng-lg">
+          <div className="flex items-start gap-3">
+            {state.conceptDesign.image
+              ? <img src={state.conceptDesign.image} className="w-16 h-16 object-cover rounded border border-emerald-200 shrink-0" />
+              : <div className="w-16 h-16 rounded border border-dashed border-emerald-300 flex items-center justify-center text-[9px] text-emerald-500 text-center shrink-0">概念图未持久化<br/>可重新生成</div>}
+            <div className="flex-1 min-w-0">
+              <div className="text-body font-bold text-emerald-800">
+                ✅ 已采用概念:{state.conceptDesign.formType}
+                <span className="text-meta font-normal text-emerald-600 ml-2">{new Date(state.conceptDesign.adoptedAt).toLocaleString()}</span>
+                <button onClick={() => setState(p => ({ ...p, conceptDesign: null }))} className="ml-2 text-meta text-emerald-500 hover:text-red-500 underline">撤销</button>
+              </div>
+              {state.conceptDesign.notes && <div className="text-meta text-emerald-700 mt-0.5">改进要求:{state.conceptDesign.notes}</div>}
+              <div className="mt-1.5 space-y-1">
+                <div className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">开孔核对清单(由模块清单推导,对照概念图逐项确认)</div>
+                {openingChecklist.length === 0 && <div className="text-meta text-emerald-600">当前模块无需外壳开孔</div>}
+                {openingChecklist.map(it => {
+                  const done = (state.conceptDesign?.checkedOpenings || []).includes(it.key);
+                  return (
+                    <label key={it.key} className="flex items-center gap-2 text-meta text-emerald-800 cursor-pointer">
+                      <input type="checkbox" checked={done} onChange={() => toggleOpening(it.key)} className="accent-emerald-600" />
+                      <span className={done ? 'line-through opacity-60' : ''}>{it.label}</span>
+                      <span className="text-emerald-500">· {it.basis}</span>
+                    </label>
+                  );
+                })}
+                <div className="text-[9px] text-emerald-500">包围盒视图不含真实开孔;开孔在 STEP/CAD 阶段落实,此清单确保概念与结构不脱节。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {!floating && arrangedComponents.length > 0 && (
         <div className="w-full mt-2 flex flex-wrap gap-x-4 gap-y-1 px-2">
           {arrangedComponents.map((c: any, i) => (
@@ -1126,7 +1179,17 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
                     />
                   </div>
                   <div className="flex gap-2">
-                    <a href={renderImg} download="product-render.png" className="flex-1 text-center px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">下载图片</a>
+                    <button
+                      onClick={() => {
+                        const label = (FORM_STYLES[formStyle] || FORM_STYLES.desktop).label;
+                        setState(p => ({ ...p, conceptDesign: { formType: label, notes: refinePrompt || undefined, adoptedAt: Date.now(), image: renderImg || undefined, checkedOpenings: [] } }));
+                        autoFitShell();
+                        setShowRenderModal(false);
+                      }}
+                      className="flex-1 text-center px-4 py-2 bg-emerald-600 text-white rounded-eng text-body font-bold hover:bg-emerald-700">
+                      ✅ 采用此概念 → 核对结构
+                    </button>
+                    <a href={renderImg} download="product-render.png" className="px-4 py-2 bg-brand-600 text-white rounded-eng text-body font-semibold hover:bg-brand-700">下载图片</a>
                     <button onClick={handleGenerateRender} className="px-4 py-2 bg-white border border-brand-300 text-brand-700 rounded-eng text-body font-semibold hover:bg-brand-50">重新生成</button>
                     <button onClick={() => { setRenderImg(null); setRefinePrompt(''); }} className="px-4 py-2 bg-white border border-ink-200 text-ink-600 rounded-eng text-body font-semibold hover:bg-ink-50">换形态</button>
                   </div>

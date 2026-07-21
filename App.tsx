@@ -172,6 +172,7 @@ const App: React.FC = () => {
           artifacts: Array.isArray(saved.state.artifacts) ? saved.state.artifacts : prev.artifacts,
           status: saved.state.status ?? prev.status,
           firmwareConfirmed: saved.state.firmwareConfirmed ?? null,
+          conceptDesign: saved.state.conceptDesign ?? null,
         }));
       }
       if (Array.isArray(saved?.aiHistory) && saved.aiHistory.length > 0) {
@@ -193,6 +194,7 @@ const App: React.FC = () => {
           components: state.components, connections: state.connections,
           pcbConstraints: state.pcbConstraints, artifacts: state.artifacts, status: state.status,
           firmwareConfirmed: state.firmwareConfirmed ?? null,
+          conceptDesign: state.conceptDesign ? { ...state.conceptDesign, image: undefined } : null, // 图片体积大,不入存档
         },
         aiHistory: aiHistory.slice(-50),
         requirements,
@@ -206,7 +208,7 @@ const App: React.FC = () => {
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [state.mode, state.currentStep, state.components, state.connections, state.pcbConstraints, state.artifacts, state.status, state.firmwareConfirmed, aiHistory, requirements]);
+  }, [state.mode, state.currentStep, state.components, state.connections, state.pcbConstraints, state.artifacts, state.status, state.firmwareConfirmed, state.conceptDesign, aiHistory, requirements]);
 
   const resetProject = () => {
     if (!window.confirm('确定重置项目?画布、对话与进度将清空(模块库不受影响)。')) return;

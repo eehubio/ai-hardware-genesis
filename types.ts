@@ -176,4 +176,11 @@ export interface ProjectState {
   categories: string[];
   pastedImages?: { id: string, url: string, x: number, y: number, width: number }[];
   firmwareConfirmed?: FirmwareConfirm | null; // C:硬件剪裁的前置门禁
+  conceptDesign?: {  // B1 闭环:已采用的整机概念(①→② 的桥)
+    formType: string;
+    notes?: string;
+    adoptedAt: number;
+    image?: string;              // 概念图(不入 localStorage,刷新后需重新生成)
+    checkedOpenings?: string[];  // 开孔清单已核对项
+  } | null;
 }
