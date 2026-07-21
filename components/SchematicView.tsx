@@ -121,7 +121,7 @@ const SchematicView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       const py = 50 + i * 260;
       const pBlock = {
         id: p.instanceId,
-        name: p.name,
+        name: p.name + ((p as any).isChipOnly ? ' ·核心器件' : ''),
         x: px,
         y: py,
         width: 220,

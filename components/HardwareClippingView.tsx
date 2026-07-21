@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ProjectState, CanvasComponent, ClipDecision } from '../types';
 import { composeFirmware } from '../lib/firmware-composer';
+import SchematicView from './SchematicView';
 
 /**
  * C:硬件剪裁(重写版)
@@ -31,6 +32,7 @@ interface ModuleAnalysis {
 }
 
 const HardwareClippingView: React.FC<{ state: ProjectState; setState: React.Dispatch<React.SetStateAction<ProjectState>> }> = ({ state, setState }) => {
+  const [showSchematic, setShowSchematic] = React.useState(false);
   const comps = state.components;
   const ids = comps.map(c => c.id).sort().join(',');
   const fc = state.firmwareConfirmed;
@@ -69,8 +71,34 @@ const HardwareClippingView: React.FC<{ state: ProjectState; setState: React.Disp
     });
   }, [comps, confirmValid, fc]);
 
+  // 提取核心的脚印尺寸:从该模块 KiCad BOM 找核心 IC 的封装尺寸(名称中的 NxNmm),
+  // 外扩 6mm 容纳必要外围(去耦/上拉);解析不到用保守默认 12×10。
+  const coreFootprintOf = (comp: CanvasComponent): { width: number; height: number } => {
+    const parts = ((comp as any).pcbIR?.components || []) as { designator: string; value: string; footprint: string; category: string }[];
+    const ics = parts.filter(p => (p.category || '').toLowerCase() === 'ic' || /^U\d/i.test(p.designator || ''));
+    let best: { w: number; h: number } | null = null;
+    for (const p of ics) {
+      const m = /([0-9]+(?:\.[0-9]+)?)x([0-9]+(?:\.[0-9]+)?)mm/i.exec(p.footprint || '');
+      if (m) {
+        const w = parseFloat(m[1]), h = parseFloat(m[2]);
+        if (!best || w * h > best.w * best.h) best = { w, h };
+      }
+    }
+    return best ? { width: Math.ceil(best.w + 6), height: Math.ceil(best.h + 6) } : { width: 12, height: 10 };
+  };
+
   const setDecision = (instanceId: string, d: ClipDecision) => {
-    setState(p => ({ ...p, components: p.components.map(c => c.instanceId === instanceId ? { ...c, clipDecision: d } : c) }));
+    setState(p => ({
+      ...p,
+      components: p.components.map(c => {
+        if (c.instanceId !== instanceId) return c;
+        if (d === 'core') {
+          // 决策落地:后续布局/布线/外壳按"核心器件簇"尺寸计算,不再用整模块脚印
+          return { ...c, clipDecision: d, isChipOnly: true, footprint: { ...(c.footprint || {}), ...coreFootprintOf(c), type: 'SMD' } as any };
+        }
+        return { ...c, clipDecision: d, isChipOnly: false };
+      }),
+    }));
   };
 
   // ===== 聚合建议(仅统计有数据的模块,覆盖率如实标注)=====
@@ -221,11 +249,36 @@ const HardwareClippingView: React.FC<{ state: ProjectState; setState: React.Disp
           })()}
         </div>
         <button
-          onClick={() => setState(p => ({ ...p, currentStep: 2 }))}
+          onClick={() => setShowSchematic(true)}
           className="px-6 py-2.5 bg-brand-600 text-white rounded-eng-lg text-body font-bold hover:bg-brand-700 transition-colors flex items-center gap-2">
-          决策完成 · 进入 PCB 约束 →
+          决策完成 · 生成原理图确认 →
         </button>
       </div>
+
+      {showSchematic && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6" onClick={() => setShowSchematic(false)}>
+          <div className="bg-white rounded-eng-xl w-full max-w-5xl h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-ink-200 flex items-center justify-between">
+              <div>
+                <div className="text-body font-bold text-ink-900">原理图确认(按剪裁决策拼装)</div>
+                <div className="text-meta text-ink-500">整模块按模块符号,「提取核心」的按核心器件符号(标 ·核心);连线为信号级示意。确认无误后进入布局。</div>
+              </div>
+              <button onClick={() => setShowSchematic(false)} className="text-ink-400 hover:text-ink-700 text-xl">×</button>
+            </div>
+            <div className="flex-1 overflow-auto bg-slate-50">
+              <SchematicView state={state} setState={setState} />
+            </div>
+            <div className="px-5 py-3 border-t border-ink-200 flex justify-end gap-2">
+              <button onClick={() => setShowSchematic(false)} className="px-4 py-2 text-body text-ink-500 hover:text-ink-800">返回调整决策</button>
+              <button
+                onClick={() => { setShowSchematic(false); setState(p => ({ ...p, currentStep: 2 })); }}
+                className="px-6 py-2 bg-emerald-600 text-white rounded-eng-lg text-body font-bold hover:bg-emerald-700">
+                ✅ 确认原理图 · 进入 PCB 约束 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <p className="text-meta text-ink-400 leading-relaxed">
         ★ = 系统建议 · 决策随项目保存。「提取核心」的具体器件保留清单依赖各模块 KiCad 子电路提取(网络与 BOM 数据已就位,精细到"哪个电阻必须留"的自动分析在后续版本提供);当前版本给出模块级取舍与连接器/电源冗余合并方向。

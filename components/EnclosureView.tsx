@@ -242,15 +242,17 @@ const EnclosureView: React.FC<{ state: ProjectState; setState: React.Dispatch<Re
       const n = typeof v === 'number' && isFinite(v) ? v : NaN;
       return isNaN(n) ? dflt : Math.max(lo, Math.min(hi, n));
     };
-    return state.components.map((comp, idx) => {
+    return state.components.filter(c => c.clipDecision !== 'remove').map((comp, idx) => {
       const isMcu = comp.type === 'mcu' || comp.type === 'processor';
-      const dims = comp.physical?.dimensions as any;
+      // 提取核心的模块:结构视图按核心器件簇脚印(剪裁决策落地),不再用整模块外形
+      const coreFp = (comp as any).isChipOnly ? (comp as any).footprint : null;
+      const dims = coreFp ? { width: coreFp.width, height: coreFp.height, depth: 3 } : (comp.physical?.dimensions as any);
       const outline = (comp as any).geometry?.outline;
       const cw = clampN(dims?.width ?? outline?.width, 6, 120, isMcu ? 21 : 20);
       const ch = clampN(dims?.height ?? outline?.height, 6, 120, isMcu ? 17.8 : 20);
       const cd = clampN(dims?.depth, 2, 40, isMcu ? 4 : 8);
       const dimSource: 'db' | 'kicad' | 'default' =
-        dims?.width != null ? 'db' : outline?.width != null ? 'kicad' : 'default';
+        coreFp ? 'db' : dims?.width != null ? 'db' : outline?.width != null ? 'kicad' : 'default';
       const rawX = (comp.pcbX !== undefined ? comp.pcbX : (comp.x || 0)) / 5;
       const rawY = (comp.pcbY !== undefined ? comp.pcbY : (comp.y || 0)) / 5;
       const posX = Math.max(cw/2, Math.min(pcbW - cw/2, rawX)) - pcbW/2;

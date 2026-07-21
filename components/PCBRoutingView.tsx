@@ -140,8 +140,8 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
   const applyStrategy = (strategy: StrategyResult) => {
     const bwMm = state.pcbConstraints.width;
     const bhMm = state.pcbConstraints.height;
-    const boxes = executePlacement(state.components, strategy, bwMm, bhMm);
-    const checks = validateLayout(state.components, boxes, bwMm, bhMm);
+    const boxes = executePlacement(activeComps, strategy, bwMm, bhMm);
+    const checks = validateLayout(activeComps, boxes, bwMm, bhMm);
     const newPos: Record<string, { x: number, y: number }> = {};
     boxes.forEach(b => { newPos[b.instanceId] = { x: b.x * FOOTPRINT_SCALE, y: b.y * FOOTPRINT_SCALE }; });
     setLocalPositions(newPos);
@@ -181,7 +181,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     if (isAutoPlacing) return;
     setIsAutoPlacing(true);
     try {
-      const cands = generateCandidates(state.components, state.pcbConstraints.width, state.pcbConstraints.height, 3);
+      const cands = generateCandidates(activeComps, state.pcbConstraints.width, state.pcbConstraints.height, 3);
       setCandidates(cands);
       setActiveCandidate(0);
       applyCandidate(cands[0]);
@@ -189,7 +189,8 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
       setIsAutoPlacing(false);
     }
   };
-  const boardAdvice = suggestBoardSize(state.components);
+  const activeComps = state.components.filter(c => c.clipDecision !== 'remove');
+  const boardAdvice = suggestBoardSize(activeComps);
 
 
   useEffect(() => {
@@ -197,7 +198,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     const placedRects: {x: number, y: number, w: number, h: number}[] = [];
     
     // 1. 初始化位置并进行物理避障
-    const sortedComps = [...state.components].sort((a, b) => (a.type === 'mcu' ? -1 : 1));
+    const sortedComps = [...state.components].filter(c => c.clipDecision !== 'remove').sort((a, b) => (a.type === 'mcu' ? -1 : 1));
     
     sortedComps.forEach(comp => {
       const { w, h } = getCompSize(comp);
@@ -389,7 +390,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
 
   // E:曼哈顿 A* 避障布线(示意级)。位置变动后结果标记过期,需重新布线。
   const runRouter = () => {
-    const boxes = state.components
+    const boxes = activeComps
       .filter(c => localPositions[c.instanceId])
       .map(c => {
         const fp = (c as any).isChipOnly ? (c as any).footprint : (c as any).moduleFootprint;
@@ -401,12 +402,12 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
           h: fp?.height || 20,
         };
       });
-    const result = routeAll(state.components, boxes, state.pcbConstraints.width, state.pcbConstraints.height);
+    const result = routeAll(activeComps, boxes, state.pcbConstraints.width, state.pcbConstraints.height);
     setRouting(result);
     setRouteStale(false);
   };
   useEffect(() => { if (routing) setRouteStale(true); }, [localPositions]); // 拖动后过期
-  const NET_COLORS: Record<string, string> = { I2C: '#3b82f6', SPI: '#a855f7', UART: '#eab308', GPIO: '#22c55e' };
+  const NET_COLORS: Record<string, string> = { I2C: '#3b82f6', SPI: '#a855f7', UART: '#eab308', GPIO: '#22c55e', PWR: '#ef4444', GND: '#94a3b8' };
 
   const renderFootprint = (comp: CanvasComponent, index: number) => {
     const footprint = comp.isChipOnly ? comp.footprint : comp.moduleFootprint;
@@ -415,7 +416,7 @@ const PCBRoutingView: React.FC<{ state: ProjectState; setState: React.Dispatch<R
     const w = footprint.width * FOOTPRINT_SCALE;
     const h = footprint.height * FOOTPRINT_SCALE;
     const isDragging = activeDragId?.id === comp.instanceId && !activeDragId.isImage;
-    const designator = `U${comp.instanceId.split('-')[1].slice(-3)}`;
+    const designator = `U${comp.instanceId.split('-')[1].slice(-3)}` + (comp.isChipOnly ? '·核心' : '');
 
     return (
       <div 

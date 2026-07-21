@@ -5,11 +5,12 @@
  * 单位:mm;确定性(同输入同输出)。
  */
 import { CanvasComponent } from '../types';
+import { normalizePinMapping } from '../utils/safe';
 
 export interface RBox { instanceId: string; x: number; y: number; w: number; h: number; }
 export interface RoutedNet {
   label: string;
-  kind: 'I2C' | 'SPI' | 'UART' | 'GPIO';
+  kind: 'I2C' | 'SPI' | 'UART' | 'GPIO' | 'PWR' | 'GND';
   from: string; to: string;
   path: { x: number; y: number }[]; // mm 折点序列
   crossings: number;
@@ -81,24 +82,43 @@ export function routeAll(comps: CanvasComponent[], boxes: RBox[], bwMm: number, 
   if (!mcu || !boxOf.get(mcu.instanceId)) return { nets: [], stats: { routed: 0, fallbacks: 0, crossings: 0, totalLenMm: 0, corners: 0 } };
   const mcuBox = boxOf.get(mcu.instanceId)!;
 
-  // ---- 组网 ----
+  // ---- 组网:与原理图同一语义 ----
+  // 每个外设按 pinMapping 逐信号组网(SDA/SCL→I2C, TX/RX→UART, SCK/MOSI/MISO/CS→SPI, 其余 GPIO);
+  // 电源(VCC/3V3/GND)作为共享网络链式布设;无 pinMapping 的外设退回协议级单网。
   type Job = { label: string; kind: RoutedNet['kind']; fromId: string; toId: string };
   const jobs: Job[] = [];
   const periph = comps.filter(c => !isMcu(c) && boxOf.get(c.instanceId));
-  const i2cDevs = periph.filter(c => kindOf(c) === 'I2C');
-  const others = periph.filter(c => kindOf(c) !== 'I2C');
-  // I2C 多点总线:链式(SDA/SCL 走同一走廊,示意为一条)
-  const order = chainOrder(center(mcuBox), i2cDevs.map(c => ({ id: c.instanceId, c: center(boxOf.get(c.instanceId)!) })));
-  let prev = mcu.instanceId;
-  for (const id of order) {
-    jobs.push({ label: 'I2C 总线', kind: 'I2C', fromId: prev, toId: id });
-    prev = id;
+  const PWR_SIGS = /^(vcc|3v3|5v|vin|vdd|pwr|gnd)$/i;
+  const sigKind = (sig: string): RoutedNet['kind'] => {
+    const s = sig.toUpperCase();
+    if (/^(SDA|SCL)/.test(s)) return 'I2C';
+    if (/^(SCK|SCLK|MOSI|MISO|CS|SS)/.test(s)) return 'SPI';
+    if (/^(TX|RX|TXD|RXD)/.test(s)) return 'UART';
+    return 'GPIO';
+  };
+  const KIND_PRIO: Record<string, number> = { I2C: 0, SPI: 1, UART: 2, GPIO: 3 };
+  const sigJobs: Job[] = [];
+  const powered: string[] = [];
+  for (const c of periph) {
+    const pins = normalizePinMapping(c.electrical?.pinMapping);
+    const sigPins = pins.filter(([sig]) => !PWR_SIGS.test(sig));
+    if (sigPins.length > 0) {
+      for (const [sig, pin] of sigPins) {
+        sigJobs.push({ label: `${sig}→${pin}`, kind: sigKind(sig), fromId: mcu.instanceId, toId: c.instanceId });
+      }
+    } else {
+      sigJobs.push({ label: kindOf(c), kind: kindOf(c), fromId: mcu.instanceId, toId: c.instanceId });
+    }
+    powered.push(c.instanceId);
   }
-  // 网络优先级:I2C 总线已优先入队;其余按 SPI > UART > GPIO(先布关键网络,占用最优走廊)
-  const PRIO: Record<string, number> = { SPI: 0, UART: 1, GPIO: 2 };
-  for (const c of [...others].sort((a, b) => PRIO[kindOf(a)] - PRIO[kindOf(b)])) {
-    jobs.push({ label: kindOf(c), kind: kindOf(c), fromId: mcu.instanceId, toId: c.instanceId });
-  }
+  sigJobs.sort((a, b) => KIND_PRIO[a.kind] - KIND_PRIO[b.kind]);
+  jobs.push(...sigJobs);
+  // 电源网络:VCC 与 GND 各一条链(主控→最近邻串接),对应原理图的红/黑线
+  const pwrOrder = chainOrder(center(mcuBox), powered.map(id => ({ id, c: center(boxOf.get(id)!) })));
+  let prevV = mcu.instanceId;
+  for (const id of pwrOrder) { jobs.push({ label: 'VCC/3V3', kind: 'PWR', fromId: prevV, toId: id }); prevV = id; }
+  let prevG = mcu.instanceId;
+  for (const id of pwrOrder) { jobs.push({ label: 'GND', kind: 'GND', fromId: prevG, toId: id }); prevG = id; }
 
   // ---- A*(4 邻域 + 方向状态做转角代价)----
   const astar = (s: { x: number; y: number }, t: { x: number; y: number }, allow: Set<number>) => {
